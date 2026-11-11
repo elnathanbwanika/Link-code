@@ -1,0 +1,239 @@
+/* ==========================================================================
+   Link Code — Link Ecosystem design system
+   Pure black base, #ff6600 accent, Syncopate headings, JetBrains Mono code,
+   Inter body. 10px cards, 8px buttons, 6px chips, flat with 1px borders.
+   ========================================================================== */
+
+@define-color lc_bg            #000000;
+@define-color lc_panel         #0d0d0d;
+@define-color lc_card          #141414;
+@define-color lc_border        #232323;
+@define-color lc_hover         #1c1c1c;
+@define-color lc_accent        #ff6600;
+@define-color lc_accent_dim    #b34700;
+@define-color lc_text          #f2f2f2;
+@define-color lc_text_dim      #9a9a9a;
+@define-color lc_text_disabled #5c5c5c;
+@define-color lc_green         #2ecc71;
+@define-color lc_red           #ff4d4d;
+@define-color lc_amber         #ffb020;
+@define-color lc_blue          #4da3ff;
+
+/* Bundled families. The files are installed into
+   ~/.local/share/link-code/fonts on first run and referenced by the provider
+   installed from lib.rs. */
+
+* {
+  outline-color: alpha(@lc_accent, 0.6);
+}
+
+window, .lc-root {
+  background-color: @lc_bg;
+  color: @lc_text;
+  font-family: "Inter", "Cantarell", sans-serif;
+  font-size: 14px;
+}
+
+.lc-title    { font-family: "Syncopate", sans-serif; font-weight: 700; letter-spacing: 0.08em; }
+.lc-heading  { font-family: "Syncopate", sans-serif; font-weight: 400; letter-spacing: 0.06em; }
+.lc-section  { font-family: "Syncopate", sans-serif; font-size: 11px; font-weight: 700;
+               letter-spacing: 0.12em; color: @lc_text_dim; }
+.lc-mono, .lc-code, textview.lc-code text, .lc-path {
+  font-family: "JetBrains Mono", monospace;
+}
+.lc-path     { font-size: 12px; color: @lc_text_dim; }
+.lc-dim      { color: @lc_text_dim; }
+.lc-disabled { color: @lc_text_disabled; }
+.lc-accent   { color: @lc_accent; }
+.lc-ok       { color: @lc_green; }
+.lc-warn     { color: @lc_amber; }
+.lc-error    { color: @lc_red; }
+.lc-info     { color: @lc_blue; }
+.lc-tiny     { font-size: 11px; }
+
+/* ---------------------------------------------------------------- header */
+.lc-header {
+  background-color: @lc_bg;
+  border-bottom: 1px solid @lc_border;
+  min-height: 44px;
+  padding: 0 8px;
+}
+.lc-logo-mark { color: @lc_accent; font-size: 16px; }
+.lc-header-button {
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 4px 10px; color: @lc_text_dim; transition: all 140ms ease-out;
+}
+.lc-header-button:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-header-button:checked { color: @lc_accent; border-color: @lc_border; }
+
+/* ------------------------------------------------------------------ rail */
+.lc-rail {
+  background-color: @lc_bg;
+  border-right: 1px solid @lc_border;
+  padding: 8px 4px;
+  min-width: 56px;
+}
+.lc-rail button {
+  background: transparent; border: none; border-radius: 8px;
+  padding: 10px; color: @lc_text_dim; transition: all 140ms ease-out;
+}
+.lc-rail button:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-rail button:checked { color: @lc_accent; background-color: alpha(@lc_accent, 0.12); }
+.lc-rail button:checked::before {
+  content: ""; border-left: 2px solid @lc_accent;
+}
+
+/* --------------------------------------------------------------- panels */
+.lc-sidebar { background-color: @lc_panel; border-right: 1px solid @lc_border; }
+.lc-center  { background-color: @lc_bg; }
+.lc-agent   { background-color: @lc_panel; border-left: 1px solid @lc_border; }
+.lc-bottom  { background-color: @lc_panel; border-top: 1px solid @lc_border; }
+
+.lc-status {
+  background-color: @lc_bg; border-top: 1px solid @lc_border;
+  min-height: 26px; padding: 0 10px; font-size: 11px; color: @lc_text_dim;
+}
+.lc-status .lc-sep { color: @lc_border; }
+
+/* ---------------------------------------------------------------- cards */
+.lc-card {
+  background-color: @lc_card;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.lc-card:hover { border-color: #2c2c2c; }
+
+/* -------------------------------------------------------------- chat log */
+.lc-conversation { background-color: @lc_panel; }
+.lc-block-user {
+  background-color: @lc_card; border-left: 3px solid @lc_accent;
+  border-radius: 10px; padding: 10px 12px;
+}
+.lc-block-assistant { background-color: @lc_card; border: 1px solid @lc_border;
+  border-radius: 10px; padding: 10px 12px; }
+.lc-block-system { padding: 2px 6px; color: @lc_text_disabled; font-size: 12px; }
+.lc-block-error {
+  background-color: alpha(@lc_red, 0.08);
+  border: 1px solid @lc_red; border-radius: 10px; padding: 10px 12px;
+}
+.lc-block-plan { border: 1px dashed @lc_border; border-radius: 10px; padding: 10px 12px; }
+
+.lc-badge {
+  background-color: #1a1a1a; border: 1px solid @lc_border; border-radius: 6px;
+  padding: 1px 7px; font-family: "JetBrains Mono", monospace;
+  font-size: 11px; color: @lc_text_dim;
+}
+.lc-badge-accent { color: @lc_accent; border-color: alpha(@lc_accent, 0.45); }
+
+.lc-chip {
+  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 6px;
+  padding: 2px 8px; font-size: 11px;
+}
+.lc-chip-pending { color: @lc_text_dim; }
+.lc-chip-running { color: @lc_amber; border-color: alpha(@lc_amber, 0.5); }
+.lc-chip-done    { color: @lc_green; border-color: alpha(@lc_green, 0.5); }
+.lc-chip-failed  { color: @lc_red;   border-color: alpha(@lc_red, 0.5); }
+.lc-chip-denied  { color: @lc_text_disabled; }
+
+.lc-suggestion {
+  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; color: @lc_text; transition: all 140ms ease-out;
+}
+.lc-suggestion:hover { border-color: @lc_accent; color: @lc_accent; }
+
+/* Pulsing dot shown while the agent works. */
+@keyframes lc-pulse {
+  0%   { opacity: 1.0; }
+  50%  { opacity: 0.25; }
+  100% { opacity: 1.0; }
+}
+.lc-working-dot { color: @lc_accent; animation: lc-pulse 1.4s ease-in-out infinite; }
+
+/* ---------------------------------------------------------------- diffs */
+.lc-diff { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+.lc-diff-header { background-color: @lc_card; border-bottom: 1px solid @lc_border;
+  padding: 6px 10px; border-radius: 10px 10px 0 0; }
+.diff-added   { background-color: alpha(@lc_green, 0.12); color: #b7f5cd; }
+.diff-removed { background-color: alpha(@lc_red, 0.12); color: #ffc3c3; }
+.diff-context { color: @lc_text_dim; }
+.lc-gutter { color: @lc_text_disabled; font-size: 11px; }
+.lc-add-count { color: @lc_green; }
+.lc-del-count { color: @lc_red; }
+
+/* --------------------------------------------------------------- tables */
+.lc-todo-done { color: @lc_text_disabled; text-decoration: line-through; }
+.lc-todo-active { color: @lc_accent; }
+
+/* ------------------------------------------------------------- controls */
+button.lc-primary {
+  background-image: none;
+  background-color: @lc_accent;
+  color: #150a00;
+  border: 1px solid @lc_accent;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 600;
+  transition: all 140ms ease-out;
+}
+button.lc-primary:hover { background-color: #ff7d26; }
+button.lc-primary:disabled { background-color: @lc_card; color: @lc_text_disabled;
+  border-color: @lc_border; }
+
+button.lc-ghost {
+  background: transparent; border: 1px solid @lc_border; border-radius: 8px;
+  padding: 6px 12px; color: @lc_text;
+}
+button.lc-ghost:hover { background-color: @lc_hover; border-color: #333; }
+button.lc-danger { border-color: alpha(@lc_red, 0.6); color: @lc_red; }
+
+entry.lc-input, textview.lc-input {
+  background-color: @lc_card; color: @lc_text;
+  border: 1px solid @lc_border; border-radius: 8px;
+}
+entry.lc-input:focus-within, textview.lc-input:focus-within {
+  border-color: @lc_accent;
+}
+
+.lc-input-bar { background-color: @lc_panel; border-top: 1px solid @lc_border; padding: 8px; }
+.lc-composer { background-color: @lc_card; border: 1px solid @lc_border; border-radius: 10px; }
+.lc-composer:focus-within { border-color: @lc_accent; }
+
+popover.lc-popover > contents {
+  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 10px;
+  padding: 6px; color: @lc_text;
+}
+
+.lc-risk-low    { color: @lc_blue; }
+.lc-risk-medium { color: @lc_amber; }
+.lc-risk-high   { color: @lc_red; }
+
+/* Modal overlay: dim the world behind a real modal dialog. */
+window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
+
+.lc-meter trough { background-color: @lc_card; border-radius: 999px; min-height: 6px; }
+.lc-meter progress { background-color: @lc_accent; border-radius: 999px; min-height: 6px; }
+.lc-meter.lc-meter-warn progress { background-color: @lc_amber; }
+.lc-meter.lc-meter-full progress { background-color: @lc_red; }
+
+.lc-statusbar-fullauto { background-color: alpha(@lc_red, 0.18); border-top-color: @lc_red; }
+
+.lc-welcome { padding: 32px; }
+.lc-recent-row { border-radius: 8px; padding: 6px 10px; }
+.lc-recent-row:hover { background-color: @lc_hover; }
+
+.lc-treeview row:selected { background-color: alpha(@lc_accent, 0.18); }
+.lc-treeview row:hover { background-color: @lc_hover; }
+
+.lc-tabstrip { background-color: @lc_bg; border-bottom: 1px solid @lc_border; }
+.lc-tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: 6px 12px; color: @lc_text_dim;
+}
+.lc-tab:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-tab:checked { color: @lc_text; border-bottom-color: @lc_accent; }
+.tab-dirty { color: @lc_accent; }
+
+/* Respect reduced motion. */
+.reduced-motion .lc-working-dot { animation: none; }
+.reduced-motion * { transition: none; }

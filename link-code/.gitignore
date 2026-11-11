@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+*.deb
+*.AppImage
+/dist
+/.flatpak-builder
+/build-dir
+Cargo.lock.bak

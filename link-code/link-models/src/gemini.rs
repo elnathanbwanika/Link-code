@@ -1,0 +1,361 @@
+//! Google Gemini adapter (`generateContent` / `streamGenerateContent`).
+//!
+//! Gemini's shape differs again: `contents` instead of messages, `parts`
+//! instead of content blocks, a separate `systemInstruction`, and
+//! `functionCall` / `functionResponse` parts. The API key is sent in the
+//! `x-goog-api-key` header so it never appears in a URL or a log.
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use futures_util::StreamExt;
+use serde_json::{json, Map, Value};
+
+use crate::error::{LinkModelError, ModelResult};
+use crate::openai::HttpClient;
+use crate::provider::{ConnectionReport, ModelProvider, ModelStream};
+use crate::registry::{ModelConfig, ProviderKind};
+use crate::sse::{finish_reason, json_events, truncate};
+use crate::types::{Capabilities, ChatMessage, ChatRequest, ModelInfo, Role, StreamEvent, Usage};
+
+pub struct GeminiProvider {
+    config: ModelConfig,
+    http: HttpClient,
+}
+
+impl GeminiProvider {
+    pub fn new(config: ModelConfig, api_key: Option<String>) -> Self {
+        let http = HttpClient::new(&config.extra_headers, api_key);
+        Self { config, http }
+    }
+
+    fn headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let builder = self.http.apply(builder);
+        match &self.http.api_key {
+            Some(key) => builder.header("x-goog-api-key", key),
+            None => builder,
+        }
+    }
+
+    fn endpoint(&self, method: &str) -> String {
+        let base = self.config.base_url.trim_end_matches('/');
+        format!("{base}/v1beta/models/{}:{method}", self.config.model_id)
+    }
+
+    fn wire_parts(message: &ChatMessage) -> Value {
+        let mut parts: Vec<Value> = Vec::new();
+        if !message.content.is_empty() {
+            parts.push(json!({ "text": message.content }));
+        }
+        for image in &message.images {
+            parts.push(json!({
+                "inlineData": { "mimeType": image.mime_type, "data": image.data_base64 }
+            }));
+        }
+        Value::Array(parts)
+    }
+
+    fn build_body(&self, request: &ChatRequest) -> Value {
+        let mut contents: Vec<Value> = Vec::new();
+        for message in &request.messages {
+            let role = match message.role {
+                Role::Assistant => "model",
+                // Gemini has no dedicated tool role; results go back as a user turn.
+                Role::User | Role::System | Role::Tool => "user",
+            };
+            let parts = match message.role {
+                Role::Tool => {
+                    let name = message.name.clone().unwrap_or_default();
+                    let response = message
+                        .content
+                        .parse::<Value>()
+                        .unwrap_or_else(|_| json!({ "result": message.content }));
+                    json!([{ "functionResponse": { "name": name, "response": response } }])
+                }
+                Role::Assistant => {
+                    let mut parts = Self::wire_parts(message);
+                    if let Some(array) = parts.as_array_mut() {
+                        for call in &message.tool_calls {
+                            array.push(json!({
+                                "functionCall": {
+                                    "name": call.name,
+                                    "args": call.parsed_arguments().unwrap_or_else(|| json!({}))
+                                }
+                            }));
+                        }
+                    }
+                    parts
+                }
+                _ => Self::wire_parts(message),
+            };
+            if parts.as_array().map(|a| a.is_empty()).unwrap_or(false) {
+                continue;
+            }
+            contents.push(json!({ "role": role, "parts": parts }));
+        }
+
+        let mut body = Map::new();
+        body.insert("contents".to_string(), Value::Array(contents));
+        if let Some(system) = request.system.as_deref() {
+            if !system.trim().is_empty() {
+                body.insert(
+                    "systemInstruction".to_string(),
+                    json!({ "parts": [{ "text": system }] }),
+                );
+            }
+        }
+        if !request.tools.is_empty() {
+            let declarations: Vec<Value> = request
+                .tools
+                .iter()
+                .filter_map(|tool| {
+                    let function = tool.get("function")?;
+                    Some(json!({
+                        "name": function.get("name")?,
+                        "description": function.get("description").cloned().unwrap_or(json!("")),
+                        "parameters": function.get("parameters").cloned().unwrap_or(json!({
+                            "type": "object", "properties": {}
+                        })),
+                    }))
+                })
+                .collect();
+            body.insert("tools".to_string(), json!([{ "functionDeclarations": declarations }]));
+        }
+
+        let mut generation = Map::new();
+        if let Some(temperature) = request.temperature {
+            generation.insert("temperature".to_string(), json!(temperature));
+        }
+        if let Some(top_p) = request.top_p {
+            generation.insert("topP".to_string(), json!(top_p));
+        }
+        if let Some(max_tokens) = request.max_tokens {
+            generation.insert("maxOutputTokens".to_string(), json!(max_tokens));
+        }
+        if !request.stop.is_empty() {
+            generation.insert("stopSequences".to_string(), json!(request.stop));
+        }
+        if !generation.is_empty() {
+            body.insert("generationConfig".to_string(), Value::Object(generation));
+        }
+        if let Some(extra) = &request.extra_body {
+            if let Some(object) = extra.as_object() {
+                for (key, value) in object {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        Value::Object(body)
+    }
+
+    /// Walk one streaming chunk, emitting text, thinking and tool calls.
+    fn emit_chunk(value: &Value, out: &mut Vec<StreamEvent>) -> Option<Usage> {
+        let mut usage = None;
+        if let Some(meta) = value.get("usageMetadata") {
+            let prompt = meta.get("promptTokenCount").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let completion = meta
+                .get("candidatesTokenCount")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            if prompt > 0 || completion > 0 {
+                usage = Some(Usage {
+                    prompt_tokens: prompt,
+                    completion_tokens: completion,
+                });
+            }
+        }
+        let Some(candidate) = value.get("candidates").and_then(|c| c.get(0)) else {
+            return usage;
+        };
+        if let Some(parts) = candidate
+            .get("content")
+            .and_then(|c| c.get("parts"))
+            .and_then(Value::as_array)
+        {
+            let mut tool_index = 0usize;
+            for part in parts {
+                if part.get("thought").and_then(Value::as_bool).unwrap_or(false) {
+                    if let Some(text) = part.get("text").and_then(Value::as_str) {
+                        out.push(StreamEvent::ThinkingDelta(text.to_string()));
+                    }
+                    continue;
+                }
+                if let Some(text) = part.get("text").and_then(Value::as_str) {
+                    out.push(StreamEvent::TextDelta(text.to_string()));
+                }
+                if let Some(call) = part.get("functionCall") {
+                    let name = call.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                    let arguments = call
+                        .get("args")
+                        .map(|args| args.to_string())
+                        .unwrap_or_else(|| "{}".to_string());
+                    out.push(StreamEvent::ToolCallDelta {
+                        index: tool_index,
+                        id: Some(format!("call_{tool_index}")),
+                        name: Some(name),
+                        arguments_delta: arguments,
+                    });
+                    tool_index += 1;
+                }
+            }
+        }
+        if let Some(reason) = candidate.get("finishReason").and_then(Value::as_str) {
+            if reason != "FINISH_REASON_UNSPECIFIED" {
+                out.push(StreamEvent::Done {
+                    finish_reason: finish_reason(Some(reason)),
+                });
+            }
+        }
+        usage
+    }
+}
+
+#[async_trait]
+impl ModelProvider for GeminiProvider {
+    fn id(&self) -> &str {
+        &self.config.id
+    }
+
+    fn label(&self) -> &str {
+        &self.config.display_name
+    }
+
+    fn provider_kind(&self) -> ProviderKind {
+        ProviderKind::Gemini
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        self.config.capabilities
+    }
+
+    fn context_window(&self) -> usize {
+        self.config.context_window
+    }
+
+    async fn list_models(&self) -> ModelResult<Vec<ModelInfo>> {
+        let base = self.config.base_url.trim_end_matches('/');
+        let url = format!("{base}/v1beta/models");
+        let value = self.http.get_json(&url).await?;
+        let mut models = Vec::new();
+        for entry in value.get("models").and_then(Value::as_array).cloned().unwrap_or_default() {
+            let Some(name) = entry.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            // Names arrive as `models/gemini-2.0-flash`.
+            let id = name.rsplit('/').next().unwrap_or(name).to_string();
+            let mut info = ModelInfo::new(id);
+            info.name = entry
+                .get("displayName")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            info.context_window = entry
+                .get("inputTokenLimit")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize);
+            models.push(info);
+        }
+        models.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(models)
+    }
+
+    async fn stream_chat(&self, request: ChatRequest) -> ModelResult<ModelStream> {
+        let url = format!("{}?alt=sse", self.endpoint("streamGenerateContent"));
+        let body = self.build_body(&request);
+        let builder = self.headers(self.http.client.post(&url)).json(&body);
+        let response = builder.send().await.map_err(|e| LinkModelError::Connection {
+            url: url.clone(),
+            source: Box::new(e),
+        })?;
+        let response = self.http.check(&url, response).await?;
+        let events = json_events(response);
+        let stream = async_stream::stream! {
+            futures_util::pin_mut!(events);
+            let mut finished = false;
+            while let Some(item) = events.next().await {
+                match item {
+                    Err(error) => yield Err(error),
+                    Ok(value) => {
+                        let mut out = Vec::new();
+                        if let Some(usage) = GeminiProvider::emit_chunk(&value, &mut out) {
+                            let done = out
+                                .iter()
+                                .any(|e| matches!(e, StreamEvent::Done { .. }));
+                            for event in out.drain(..) {
+                                if matches!(event, StreamEvent::Done { .. }) {
+                                    finished = true;
+                                }
+                                yield Ok(event);
+                            }
+                            yield Ok(StreamEvent::Usage(usage));
+                            if done {
+                                finished = true;
+                            }
+                        } else {
+                            for event in out {
+                                if matches!(event, StreamEvent::Done { .. }) {
+                                    finished = true;
+                                }
+                                yield Ok(event);
+                            }
+                        }
+                    }
+                }
+            }
+            if !finished {
+                yield Ok(StreamEvent::Done {
+                    finish_reason: crate::types::FinishReason::Stop,
+                });
+            }
+        };
+        Ok(Box::pin(stream))
+    }
+
+    async fn complete(&self, request: ChatRequest) -> ModelResult<(String, Usage)> {
+        let url = self.endpoint("generateContent");
+        let body = self.build_body(&request);
+        let builder = self.headers(self.http.client.post(&url)).json(&body);
+        let response = builder.send().await.map_err(|e| LinkModelError::Connection {
+            url: url.clone(),
+            source: Box::new(e),
+        })?;
+        let value = self
+            .http
+            .check(&url, response)
+            .await?
+            .json::<Value>()
+            .await
+            .map_err(|e| LinkModelError::Malformed(format!("expected JSON from {url}: {e}")))?;
+        let mut out = Vec::new();
+        let usage = GeminiProvider::emit_chunk(&value, &mut out).unwrap_or_default();
+        let text = out
+            .into_iter()
+            .filter_map(|event| match event {
+                StreamEvent::TextDelta(text) => Some(text),
+                _ => None,
+            })
+            .collect::<String>();
+        Ok((text, usage))
+    }
+
+    async fn test_connection(&self) -> ModelResult<ConnectionReport> {
+        let started = std::time::Instant::now();
+        let mut request = ChatRequest::new(&self.config.model_id);
+        request.messages = vec![ChatMessage::user("Reply with the single word: pong")];
+        request.max_tokens = Some(16);
+        request.temperature = Some(0.0);
+        let (text, usage) = self.complete(request).await?;
+        let elapsed = started.elapsed();
+        Ok(ConnectionReport {
+            model: self.config.badge(),
+            latency_ms: elapsed.as_millis() as u64,
+            tokens_per_second: usage.tokens_per_second(elapsed),
+            tool_calling: self.config.capabilities.tools,
+            streaming: self.config.capabilities.streaming,
+            message: format!("Replied: {}", truncate(text.trim(), 60)),
+        })
+    }
+}
+
+pub fn make(config: ModelConfig, api_key: Option<String>) -> Arc<dyn ModelProvider> {
+    Arc::new(GeminiProvider::new(config, api_key))
+}

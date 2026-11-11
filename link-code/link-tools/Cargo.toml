@@ -1,0 +1,30 @@
+[package]
+name = "link-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Link Code agent tools: file, search, shell and todo tools"
+
+[dependencies]
+link-core = { path = "../link-core" }
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+regex.workspace = true
+globset.workspace = true
+ignore.workspace = true
+walkdir.workspace = true
+reqwest.workspace = true
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "link-core",
+    "link-models",
+    "link-tools",
+    "link-ui",
+    "link-app",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+authors = ["Link Ecosystem"]
+homepage = "https://github.com/link-ecosystem/link-code"
+repository = "https://github.com/link-ecosystem/link-code"
+description = "Link Code — a native AI coding IDE for Ubuntu Linux"
+
+[workspace.dependencies]
+# --- serialisation / errors ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+
+# --- async runtime ---
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "process",
+    "io-util",
+    "fs",
+] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
+
+# --- misc ---
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "6"
+regex = "1"
+globset = "0.4"
+ignore = "0.4"
+similar = { version = "2", features = ["inline"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+
+# --- networking / models ---
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+    "gzip",
+] }
+eventsource-stream = "0.2"
+reqwest-eventsource = "0.6"
+
+# --- tools ---
+walkdir = "2"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "unwind"

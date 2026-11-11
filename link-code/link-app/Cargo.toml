@@ -1,0 +1,13 @@
+[package]
+name = "link-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Link Code application binary"
+
+[[bin]]
+name = "link-code"
+path = "src/main.rs"
+
+[dependencies]
+link-ui = { path = "../link-ui" }

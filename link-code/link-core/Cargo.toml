@@ -1,0 +1,42 @@
+[package]
+name = "link-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Link Code core: agent loop, tool runtime, permission engine, sessions"
+
+[dependencies]
+link-models = { path = "../link-models" }
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+dirs.workspace = true
+regex.workspace = true
+globset.workspace = true
+ignore.workspace = true
+similar.workspace = true
+tracing.workspace = true
+walkdir.workspace = true
+async-trait = "0.1"
+
+# Enables API-key storage in the OS keyring through libsecret (GNOME Keyring).
+# Enabled by the `link-app` binary so `link-core` still builds and tests on a
+# headless machine with no Secret Service.
+libsecret = { version = "0.9", optional = true }
+gio = { version = "0.22", optional = true }
+
+[features]
+default = []
+keyring = ["dep:libsecret", "dep:gio"]
+
+[dev-dependencies]
+tempfile.workspace = true
