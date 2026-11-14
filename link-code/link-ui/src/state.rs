@@ -152,7 +152,7 @@ pub struct Widgets {
     pub mode_button: gtk::Button,
     pub model_button: gtk::Button,
     pub context_bar: gtk::ProgressBar,
-    pub todo_box: gtk::Box,
+    pub tasks: Rc<crate::panels::agent::TaskPanel>,
     pub suggestions_box: gtk::Box,
     pub attachments_box: gtk::Box,
     pub attachments_scroll: gtk::ScrolledWindow,

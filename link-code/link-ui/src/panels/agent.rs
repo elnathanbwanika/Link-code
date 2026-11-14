@@ -4,6 +4,7 @@
 //! [`AgentEvent`]s into them (see [`handle_event`]) and puts user input on the
 //! tokio runtime through [`link_core::agent::AgentLoop`].
 
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +13,7 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use link_core::agent::AgentOptions;
-use link_core::event::{AgentEvent, DoneReason, ErrorKind, TodoStatus};
+use link_core::event::{AgentEvent, DoneReason, ErrorKind, TodoItem, TodoStatus};
 use link_core::paths::Sandbox;
 use link_core::permission::{PermissionEngine, PermissionMode, PermissionRules};
 use link_core::project::{ProjectMemory, WorkspaceSettings};
@@ -46,10 +47,270 @@ pub struct AgentPanel {
     pub stop_button: gtk::Button,
     pub mode_button: gtk::Button,
     pub context_bar: gtk::ProgressBar,
-    pub todo_box: gtk::Box,
+    /// Compact task summary above the composer, with the full checklist in a
+    /// popover. The checklist never takes height away from the conversation.
+    pub tasks: Rc<TaskPanel>,
     pub suggestions_box: gtk::Box,
     pub attachments_box: gtk::Box,
     pub attachments_scroll: gtk::ScrolledWindow,
+}
+
+/// Compact task summary docked directly above the composer.
+///
+/// The bar is one line tall and always present while a plan exists. The full
+/// checklist lives in a popover anchored above it, so opening it overlays the
+/// conversation instead of stealing its height.
+pub struct TaskPanel {
+    /// Clickable bar; also the popover anchor.
+    pub menu: gtk::MenuButton,
+    panel: gtk::Box,
+    popover: gtk::Popover,
+    label: gtk::Label,
+    progress: gtk::ProgressBar,
+    list: gtk::Box,
+    scroll: gtk::ScrolledWindow,
+    items: RefCell<Vec<TodoItem>>,
+    focus_row: Rc<RefCell<Option<gtk::Widget>>>,
+    /// Bumped on every update so a stale "hide after 5s" timer does nothing.
+    generation: Rc<Cell<u64>>,
+}
+
+impl TaskPanel {
+    fn new(panel: &gtk::Box) -> Self {
+        let menu = gtk::MenuButton::new();
+        menu.add_css_class("lc-task-bar");
+        menu.set_always_show_arrow(false);
+        menu.set_direction(gtk::ArrowType::Up);
+        menu.set_visible(false);
+        menu.set_tooltip_text(Some("Show the task list"));
+
+        let inner = gtk::Box::new(gtk::Orientation::Vertical, 3);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Label::new(None);
+        label.set_xalign(0.0);
+        label.set_hexpand(true);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label.add_css_class("lc-tiny");
+        row.append(&label);
+        let chevron = gtk::Label::new(Some("\u{25be}"));
+        chevron.add_css_class("lc-tiny");
+        chevron.add_css_class("lc-dim");
+        row.append(&chevron);
+        inner.append(&row);
+
+        let progress = gtk::ProgressBar::new();
+        progress.add_css_class("lc-task-progress");
+        progress.set_show_text(false);
+        progress.set_fraction(0.0);
+        inner.append(&progress);
+        menu.set_child(Some(&inner));
+
+        let popover = gtk::Popover::new();
+        popover.add_css_class("lc-task-popover");
+        popover.set_autohide(true);
+        popover.set_has_arrow(false);
+        popover.set_position(gtk::PositionType::Top);
+        menu.set_popover(Some(&popover));
+
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        list.set_margin_start(10);
+        list.set_margin_end(10);
+        list.set_margin_top(8);
+        list.set_margin_bottom(8);
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .propagate_natural_height(true)
+            .child(&list)
+            .build();
+        popover.set_child(Some(&scroll));
+
+        // Esc closes the checklist; the conversation underneath is untouched.
+        {
+            let popover_for_key = popover.clone();
+            let key = gtk::EventControllerKey::new();
+            key.connect_key_pressed(move |_, keyval, _, _| {
+                if keyval == gtk::gdk::Key::Escape {
+                    popover_for_key.popdown();
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                }
+            });
+            popover.add_controller(key);
+        }
+
+        let focus_row: Rc<RefCell<Option<gtk::Widget>>> = Rc::new(RefCell::new(None));
+        let generation = Rc::new(Cell::new(0u64));
+
+        // Size the popover to the panel: at most half the panel height and the
+        // same width as the bar. `scroll_to_row` centres the in-progress item.
+        {
+            let panel = panel.clone();
+            let scroll = scroll.clone();
+            let popover_for_show = popover.clone();
+            let focus = focus_row.clone();
+            popover.connect_show(move |_| {
+                let max_height = (panel.height() / 2).max(120);
+                scroll.set_max_content_height(max_height);
+                popover_for_show.set_size_request((panel.width() - 12).max(220), -1);
+                if let Some(row) = focus.borrow().clone() {
+                    scroll_to_row(&scroll, &row);
+                }
+            });
+        }
+
+        // Keep the half-panel height cap while the window is resized.
+        {
+            let scroll = scroll.clone();
+            panel.connect_notify_local(Some("height"), move |panel, _| {
+                scroll.set_max_content_height((panel.height() / 2).max(120));
+            });
+        }
+
+        Self {
+            menu,
+            panel: panel.clone(),
+            popover,
+            label,
+            progress,
+            list,
+            scroll,
+            items: RefCell::new(Vec::new()),
+            focus_row,
+            generation,
+        }
+    }
+
+    /// Rebuild the bar and checklist from the current plan.
+    fn render(&self, items: &[TodoItem]) {
+        let generation = self.generation.get() + 1;
+        self.generation.set(generation);
+        *self.items.borrow_mut() = items.to_vec();
+        chat_message::clear(&self.list);
+        self.focus_row.replace(None);
+
+        if items.is_empty() {
+            self.popover.popdown();
+            self.menu.set_visible(false);
+            return;
+        }
+
+        let total = items.len();
+        let done = items
+            .iter()
+            .filter(|item| item.status == TodoStatus::Done)
+            .count();
+        let all_done = done == total;
+        let active = items
+            .iter()
+            .find(|item| item.status == TodoStatus::InProgress);
+
+        let summary = if all_done {
+            format!("\u{2713} All tasks complete \u{00b7} {done}/{total}")
+        } else if let Some(item) = active {
+            format!("\u{25d0} {} \u{00b7} {done}/{total}", item.text)
+        } else {
+            format!("{done}/{total} tasks")
+        };
+        self.label.set_text(&summary);
+        self.label.set_tooltip_text(active.map(|item| item.text.clone()).as_deref());
+        if all_done {
+            self.menu.add_css_class("lc-task-bar-complete");
+        } else {
+            self.menu.remove_css_class("lc-task-bar-complete");
+        }
+        self.progress.set_fraction(done as f64 / total as f64);
+        self.menu.set_visible(true);
+
+        for item in items {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.add_css_class("lc-task-row");
+
+            let (icon, icon_class) = match item.status {
+                TodoStatus::Done => ("\u{2713}", "lc-task-icon-done"),
+                TodoStatus::InProgress => ("\u{25d0}", "lc-task-icon-active"),
+                TodoStatus::Pending => ("\u{25cb}", "lc-task-icon-pending"),
+            };
+            let marker = gtk::Label::new(Some(icon));
+            marker.add_css_class("lc-task-icon");
+            marker.add_css_class(icon_class);
+            marker.set_xalign(0.0);
+            marker.set_width_chars(1);
+            row.append(&marker);
+
+            let text = gtk::Label::new(Some(&item.text));
+            text.set_xalign(0.0);
+            text.set_wrap(true);
+            text.set_wrap_mode(gtk::pango::WrapMode::Char);
+            text.set_hexpand(true);
+            // Keep the popover to the panel's width so a long task wraps
+            // instead of widening the checklist across the editor.
+            text.set_max_width_chars(
+                (self.panel.width().saturating_sub(56) / 7).clamp(20, 80),
+            );
+            text.add_css_class("lc-tiny");
+            match item.status {
+                TodoStatus::Done => text.add_css_class("lc-todo-done"),
+                TodoStatus::InProgress => text.add_css_class("lc-todo-active"),
+                TodoStatus::Pending => text.add_css_class("lc-dim"),
+            }
+            row.append(&text);
+            self.list.append(&row);
+
+            if item.status == TodoStatus::InProgress && self.focus_row.borrow().is_none() {
+                self.focus_row
+                    .replace(Some(row.clone().upcast::<gtk::Widget>()));
+            }
+        }
+
+        // The checklist may already be open when a new plan arrives; keep the
+        // in-progress row in view.
+        if self.popover.is_visible() {
+            if let Some(row) = self.focus_row.borrow().clone() {
+                scroll_to_row(&self.scroll, &row);
+            }
+        }
+
+        // Completed plans tidy themselves away, but a later update re-shows the
+        // bar because the generation check fails the stale timer.
+        if all_done {
+            let menu = self.menu.clone();
+            let popover = self.popover.clone();
+            let generation_cell = self.generation.clone();
+            glib::timeout_add_local_once(Duration::from_secs(5), move || {
+                if generation_cell.get() != generation {
+                    return;
+                }
+                popover.popdown();
+                menu.set_visible(false);
+            });
+        }
+    }
+
+    /// Drop the plan for a new or cleared conversation.
+    pub fn clear(&self) {
+        self.generation.set(self.generation.get() + 1);
+        self.items.borrow_mut().clear();
+        chat_message::clear(&self.list);
+        self.focus_row.replace(None);
+        self.popover.popdown();
+        self.menu.set_visible(false);
+    }
+}
+
+/// Scroll a checklist so `row` sits near the middle of the viewport.
+fn scroll_to_row(scroll: &gtk::ScrolledWindow, row: &gtk::Widget) {
+    let scroll = scroll.clone();
+    let row = row.clone();
+    glib::idle_add_local_once(move || {
+        let adjustment = scroll.vadjustment();
+        let allocation = row.allocation();
+        let page = adjustment.page_size();
+        let target = (allocation.y() as f64 + allocation.height() as f64 - page / 2.0)
+            .clamp(adjustment.lower(), (adjustment.upper() - page).max(adjustment.lower()));
+        adjustment.set_value(target);
+    });
 }
 
 /// Forwards live tool output (shell progress, large writes) into the UI event
@@ -149,14 +410,6 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     activity.append(&activity_label);
     root.append(&activity);
 
-    // ---- todo checklist -------------------------------------------------
-    let todo_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    todo_box.set_margin_start(8);
-    todo_box.set_margin_end(8);
-    todo_box.set_margin_bottom(3);
-    todo_box.set_visible(false);
-    root.append(&todo_box);
-
     // ---- suggestion chips ----------------------------------------------
     // Vertical, full-width rows: a horizontal row of variable-length chips
     // used to set the window's *minimum* width, so three long suggestions
@@ -190,6 +443,11 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     context_bar.set_fraction(0.0);
     context_bar.set_tooltip_text(Some("Context window usage"));
     composer_area.append(&context_bar);
+
+    // The compact task bar sits directly above the input. The full checklist
+    // is a popover, so it never changes the conversation's height.
+    let tasks = Rc::new(TaskPanel::new(&root));
+    composer_area.append(&tasks.menu);
 
     let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     composer.add_css_class("lc-composer");
@@ -315,7 +573,7 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         stop_button,
         mode_button,
         context_bar,
-        todo_box,
+        tasks,
         suggestions_box,
         attachments_box,
         attachments_scroll,
@@ -1005,7 +1263,7 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
             scroll_to_bottom(&widgets);
         }
         AgentEvent::TodosUpdated { items } => {
-            render_todos(&widgets.todo_box, &items);
+            widgets.tasks.render(&items);
         }
         AgentEvent::SuggestionShown { .. } => {}
         AgentEvent::SuggestionsReady { items, .. } => {
@@ -1189,32 +1447,6 @@ fn finish_blocks(state: &Rc<UiState>) {
     }
     drop(blocks);
     rebuild_turn_text(state);
-}
-
-fn render_todos(container: &gtk::Box, items: &[link_core::event::TodoItem]) {
-    chat_message::clear(container);
-    if items.is_empty() {
-        container.set_visible(false);
-        return;
-    }
-    container.set_visible(true);
-    let heading = gtk::Label::new(Some("TASKS"));
-    heading.add_css_class("lc-section");
-    heading.set_xalign(0.0);
-    container.append(&heading);
-    for item in items {
-        let label = gtk::Label::new(Some(&format!("{}  {}", item.status.marker(), item.text)));
-        label.set_xalign(0.0);
-        label.set_wrap(true);
-        label.set_wrap_mode(gtk::pango::WrapMode::Char);
-        label.add_css_class("lc-tiny");
-        match item.status {
-            TodoStatus::Done => label.add_css_class("lc-todo-done"),
-            TodoStatus::InProgress => label.add_css_class("lc-todo-active"),
-            TodoStatus::Pending => label.add_css_class("lc-dim"),
-        }
-        container.append(&label);
-    }
 }
 
 fn render_suggestions(

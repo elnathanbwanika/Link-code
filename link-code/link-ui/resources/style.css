@@ -268,6 +268,36 @@ textview.lc-terminal, textview.lc-terminal text {
 .lc-todo-done { color: @lc_text_disabled; text-decoration: line-through; }
 .lc-todo-active { color: @lc_accent; }
 
+/* --------------------------------------------------- task bar + popover */
+menubutton.lc-task-bar > button {
+  background-color: @lc_card;
+  background-image: none;
+  border: none;
+  border-top: 1px solid @lc_border;
+  border-radius: 0;
+  padding: 4px 8px;
+  min-height: 0;
+}
+menubutton.lc-task-bar > button:hover { background-color: @lc_hover; }
+menubutton.lc-task-bar label { color: @lc_text; }
+menubutton.lc-task-bar-complete label { color: @lc_green; }
+.lc-task-progress { margin: 0; min-height: 3px; }
+.lc-task-progress trough { background-color: #262626; border-radius: 999px; min-height: 3px; }
+.lc-task-progress progress { background-color: @lc_accent; border-radius: 999px; min-height: 3px; }
+menubutton.lc-task-bar-complete .lc-task-progress progress { background-color: @lc_green; }
+popover.lc-task-popover > contents {
+  background-color: @lc_card;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  padding: 0;
+  color: @lc_text;
+}
+.lc-task-row { padding: 2px 0; }
+.lc-task-icon { font-size: 10px; }
+.lc-task-icon-pending { color: @lc_text_dim; }
+.lc-task-icon-active { color: @lc_accent; }
+.lc-task-icon-done { color: @lc_green; }
+
 /* ------------------------------------------------------------- controls */
 button.lc-primary {
   background-image: none;

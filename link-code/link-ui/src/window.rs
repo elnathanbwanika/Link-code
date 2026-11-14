@@ -254,7 +254,7 @@ impl LinkWindow {
             mode_button: agent.mode_button.clone(),
             model_button: model_button.clone(),
             context_bar: agent.context_bar.clone(),
-            todo_box: agent.todo_box.clone(),
+            tasks: agent.tasks.clone(),
             suggestions_box: agent.suggestions_box.clone(),
             attachments_box: agent.attachments_box.clone(),
             attachments_scroll: agent.attachments_scroll.clone(),
@@ -599,9 +599,8 @@ pub fn new_session(state: &Rc<UiState>) {
 
     if let Some(widgets) = state.widgets() {
         widgets::chat_message::clear(&widgets.chat_list);
-        widgets::chat_message::clear(&widgets.todo_box);
+        widgets.tasks.clear();
         widgets::chat_message::clear(&widgets.suggestions_box);
-        widgets.todo_box.set_visible(false);
         widgets.suggestions_box.set_visible(false);
         widgets.input.grab_focus();
         panels::sidebar::refresh_history(state, &widgets.sidebar);
@@ -617,9 +616,8 @@ pub fn clear_conversation(state: &Rc<UiState>) {
     state.edits.borrow_mut().clear();
     if let Some(widgets) = state.widgets() {
         widgets::chat_message::clear(&widgets.chat_list);
-        widgets::chat_message::clear(&widgets.todo_box);
+        widgets.tasks.clear();
         widgets::chat_message::clear(&widgets.suggestions_box);
-        widgets.todo_box.set_visible(false);
         widgets.suggestions_box.set_visible(false);
     }
     if let Some(session) = state.session.borrow_mut().as_mut() {
