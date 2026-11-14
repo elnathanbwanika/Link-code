@@ -3,7 +3,7 @@
 set -euo pipefail
 
 BINARY=/workspaces/Link-code/link-code/target/release/link-code
-VERSION=1.0.21
+VERSION=1.0.22
 ARCH=amd64
 PKGNAME=link-code
 PKGDIR=/tmp/link-code-deb
@@ -78,7 +78,7 @@ cat > "$PKGDIR/usr/share/metainfo/org.linkecosystem.LinkCode.metainfo.xml" <<'ME
   <description><p>Link Code is a GTK4 + libadwaita native IDE that pairs you with AI models for fast, agentic coding.</p></description>
   <url type="homepage">https://github.com/tracerdasu43/Link-code</url>
   <releases>
-    <release version="1.0.21" date="2026-11-14"/>
+    <release version="1.0.22" date="2026-11-14"/>
   </releases>
   <content_rating type="oars-1.1"/>
 </component>
