@@ -187,9 +187,9 @@ pub struct EditorSettings {
 impl Default for EditorSettings {
     fn default() -> Self {
         Self {
-            tab_width: 4,
+            tab_width: 2,
             insert_spaces: true,
-            word_wrap: false,
+            word_wrap: true,
             show_line_numbers: true,
             highlight_current_line: true,
             bracket_matching: true,
@@ -342,7 +342,7 @@ impl Config {
 
 /// The default, fully remappable keybinding table.
 pub fn default_keybindings() -> BTreeMap<String, String> {
-    let pairs: [(&str, &str); 18] = [
+    let pairs: [(&str, &str); 19] = [
         ("agent.focus", "<Control>l"),
         ("agent.send", "<Control>Return"),
         ("agent.stop", "Escape"),
@@ -352,6 +352,7 @@ pub fn default_keybindings() -> BTreeMap<String, String> {
         ("view.toggle_sidebar", "<Control>b"),
         ("view.toggle_bottom", "<Control>j"),
         ("view.toggle_agent", "<Control>backslash"),
+        ("view.toggle_wrap", "<Alt>z"),
         ("view.agent_focus_layout", "<Control><Shift>l"),
         ("view.split_horizontal", "<Control><Shift>5"),
         ("view.split_vertical", "<Control><Shift>6"),

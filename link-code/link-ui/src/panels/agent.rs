@@ -1192,21 +1192,15 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
             // Show the new contents in the editor as soon as the write lands,
             // so the user watches the file change instead of waiting a turn.
             if applied {
-                if chip.is_some() {
-                    // The buffer already holds the streamed text; force the
-                    // reload so it ends up byte-identical to disk.
-                    crate::panels::editor::reload_force(
-                        state,
-                        std::path::Path::new(&diff.path),
-                    );
-                } else {
-                    // Reload the file and show diff highlights in the editor
-                    crate::panels::editor::reload_with_diff(
-                        state,
-                        std::path::Path::new(&diff.path),
-                        &diff,
-                    );
-                }
+                // Show an inline red/green review of the change with
+                // Accept/Revert controls. This also works for diffs that did
+                // not stream into the buffer (it falls back to reloading the
+                // file and re-inserting the removed lines).
+                crate::panels::editor::show_diff_review(
+                    state,
+                    std::path::Path::new(&diff.path),
+                    &diff,
+                );
                 crate::panels::sidebar::refresh_files_deferred(state, &widgets.sidebar);
                 set_activity(
                     &widgets,

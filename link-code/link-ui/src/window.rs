@@ -31,8 +31,32 @@ use crate::widgets;
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 620;
 /// Smallest size the three columns stay usable at.
-const MIN_WIDTH: i32 = 760;
+const MIN_WIDTH: i32 = 960;
 const MIN_HEIGHT: i32 = 480;
+
+/// Minimum widths for the three columns, in pixels.
+const SIDEBAR_MIN: i32 = 200;
+const EDITOR_MIN: i32 = 360;
+const AGENT_MIN: i32 = 300;
+/// Height kept for the editor and the bottom panel.
+const EDITOR_MIN_HEIGHT: i32 = 180;
+const BOTTOM_MIN_HEIGHT: i32 = 130;
+
+fn clamp_paned(paned: &gtk::Paned, start_min: i32, end_min: i32) {
+    let total = if paned.orientation() == gtk::Orientation::Horizontal {
+        paned.width()
+    } else {
+        paned.height()
+    };
+    if total <= 0 {
+        return;
+    }
+    let max = (total - end_min).max(start_min);
+    let target = paned.position().clamp(start_min, max);
+    if target != paned.position() {
+        paned.set_position(target);
+    }
+}
 
 pub struct LinkWindow {
     window: adw::ApplicationWindow,
@@ -187,6 +211,21 @@ impl LinkWindow {
         let bottom = panels::bottom::build(&state);
         let agent = panels::agent::build(&state);
 
+        // Each column owns a minimum width and clips its own overflow. Without
+        // this a long unwrapped line hands the editor a huge minimum width,
+        // which pushes the agent panel over it instead of scrolling.
+        sidebar.root.set_size_request(SIDEBAR_MIN, -1);
+        editor.root.set_size_request(EDITOR_MIN, -1);
+        agent.root.set_size_request(AGENT_MIN, -1);
+        for root in [
+            &sidebar.root,
+            &editor.root,
+            &bottom.root,
+            &agent.root,
+        ] {
+            root.set_overflow(gtk::Overflow::Hidden);
+        }
+
         let v_paned = gtk::Paned::new(gtk::Orientation::Vertical);
         v_paned.set_start_child(Some(&editor.root));
         v_paned.set_end_child(Some(&bottom.root));
@@ -272,8 +311,9 @@ impl LinkWindow {
         });
         *state.widgets.borrow_mut() = Some(widgets.clone());
 
-        // Fit the panes to the window once it is mapped. Fixed pixel offsets
-        // would hand the whole width to one column in a smaller window.
+        // Restore the remembered column widths, then keep them usable as the
+        // window shrinks. Every position is clamped so one column can never
+        // eat the minimum width of its neighbour.
         {
             let state = state.clone();
             let fitted = Rc::new(std::cell::Cell::new(false));
@@ -293,25 +333,137 @@ impl LinkWindow {
                     } else {
                         DEFAULT_WIDTH
                     };
-                    let sidebar = (width / 4).clamp(180, 220);
-                    widgets.h_paned.set_position(sidebar);
+                    let height = if widgets.window.height() > 0 {
+                        widgets.window.height()
+                    } else {
+                        DEFAULT_HEIGHT
+                    };
+                    let layout = state.config.borrow().layout.clone();
+
+                    let sidebar = layout
+                        .get("sidebar")
+                        .copied()
+                        .unwrap_or_else(|| (width / 4).clamp(SIDEBAR_MIN, 240));
+                    let max_sidebar =
+                        (width - 56 - EDITOR_MIN - AGENT_MIN - 10).max(SIDEBAR_MIN);
+                    widgets
+                        .h_paned
+                        .set_position(sidebar.clamp(SIDEBAR_MIN, max_sidebar));
 
                     let columns = if widgets.agent_paned.width() > 0 {
                         widgets.agent_paned.width()
                     } else {
-                        width - 65 - sidebar
+                        width - 56 - sidebar
                     };
-                    let agent = (columns / 3).clamp(260, 360);
-                    widgets.agent_paned.set_position((columns - agent).max(200));
+                    let agent = layout.get("agent").copied().unwrap_or_else(|| {
+                        (columns / 3).clamp(AGENT_MIN, 360)
+                    });
+                    let max_agent = (columns - EDITOR_MIN - 8).max(AGENT_MIN);
+                    widgets
+                        .agent_paned
+                        .set_position((columns - agent.clamp(AGENT_MIN, max_agent)).max(EDITOR_MIN));
 
-                    let height = if widgets.v_paned.height() > 0 {
+                    let vheight = if widgets.v_paned.height() > 0 {
                         widgets.v_paned.height()
                     } else {
-                        widgets.window.height().max(MIN_HEIGHT) - 80
+                        (height - 90).max(EDITOR_MIN_HEIGHT + BOTTOM_MIN_HEIGHT)
                     };
-                    let bottom = (height / 4).clamp(130, 220);
-                    widgets.v_paned.set_position((height - bottom).max(180));
+                    let bottom = layout.get("bottom").copied().unwrap_or_else(|| {
+                        (vheight / 4).clamp(BOTTOM_MIN_HEIGHT, 220)
+                    });
+                    let max_bottom = (vheight - EDITOR_MIN_HEIGHT).max(BOTTOM_MIN_HEIGHT);
+                    widgets
+                        .v_paned
+                        .set_position((vheight - bottom.clamp(BOTTOM_MIN_HEIGHT, max_bottom))
+                            .max(EDITOR_MIN_HEIGHT));
                 });
+            });
+        }
+
+        // Persist pane sizes to `config.layout` after a drag, debounced so a
+        // drag writes the config once instead of on every pixel.
+        {
+            let state = state.clone();
+            let pending = Rc::new(std::cell::Cell::new(false));
+            let schedule_save: Rc<dyn Fn()> = {
+                let state = state.clone();
+                let pending = pending.clone();
+                Rc::new(move || {
+                    if pending.replace(true) {
+                        return;
+                    }
+                    let state = state.clone();
+                    let pending = pending.clone();
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(450),
+                        move || {
+                            pending.set(false);
+                            let _ = state.save_config();
+                        },
+                    );
+                })
+            };
+
+            {
+                let state = state.clone();
+                let schedule_save = schedule_save.clone();
+                h_paned.connect_notify_local(Some("position"), move |paned, _| {
+                    clamp_paned(paned, SIDEBAR_MIN, EDITOR_MIN + AGENT_MIN + 8);
+                    let position = paned.position();
+                    if position > 0 {
+                        state
+                            .config
+                            .borrow_mut()
+                            .layout
+                            .insert("sidebar".to_string(), position);
+                        schedule_save();
+                    }
+                });
+            }
+            {
+                let state = state.clone();
+                let schedule_save = schedule_save.clone();
+                agent_paned.connect_notify_local(Some("position"), move |paned, _| {
+                    clamp_paned(paned, EDITOR_MIN, AGENT_MIN);
+                    let position = paned.position();
+                    let width = paned.width();
+                    if position > 0 && width > position {
+                        state
+                            .config
+                            .borrow_mut()
+                            .layout
+                            .insert("agent".to_string(), width - position);
+                        schedule_save();
+                    }
+                });
+            }
+            {
+                let state = state.clone();
+                let schedule_save = schedule_save.clone();
+                v_paned.connect_notify_local(Some("position"), move |paned, _| {
+                    clamp_paned(paned, EDITOR_MIN_HEIGHT, BOTTOM_MIN_HEIGHT);
+                    let position = paned.position();
+                    let height = paned.height();
+                    if position > 0 && height > position {
+                        state
+                            .config
+                            .borrow_mut()
+                            .layout
+                            .insert("bottom".to_string(), height - position);
+                        schedule_save();
+                    }
+                });
+            }
+
+            // A window resize must not leave a pane wider than the space it has.
+            h_paned.connect_notify_local(Some("width"), |paned, _| {
+                clamp_paned(paned, SIDEBAR_MIN, EDITOR_MIN + AGENT_MIN + 8);
+            });
+            agent_paned.connect_notify_local(Some("width"), |paned, _| {
+                clamp_paned(paned, EDITOR_MIN, AGENT_MIN);
+            });
+            v_paned.connect_notify_local(Some("height"), |paned, _| {
+                clamp_paned(paned, EDITOR_MIN_HEIGHT, BOTTOM_MIN_HEIGHT);
             });
         }
 
@@ -425,6 +577,13 @@ fn register_actions(window: &adw::ApplicationWindow, state: &Rc<UiState>) {
     {
         let state = state.clone();
         add(
+            "toggle-wrap",
+            Box::new(move || panels::editor::toggle_word_wrap(&state)),
+        );
+    }
+    {
+        let state = state.clone();
+        add(
             "command-palette",
             Box::new(move || crate::dialogs::command_palette::present(&state)),
         );
@@ -491,7 +650,7 @@ pub fn toggle_sidebar(state: &Rc<UiState>) {
         let visible = widgets.sidebar_root.is_visible();
         widgets.sidebar_root.set_visible(!visible);
         if !visible {
-            widgets.sidebar_root.set_width_request(220);
+            widgets.sidebar_root.set_width_request(SIDEBAR_MIN);
         }
     }
 }
@@ -510,15 +669,15 @@ pub fn toggle_agent(state: &Rc<UiState>) {
             let width = widgets.agent_paned.width();
             let position = widgets.agent_paned.position();
             if width > 0 && position > 0 && position < width {
-                state.agent_width.set((width - position).max(280));
+                state.agent_width.set((width - position).max(AGENT_MIN));
             }
             widgets.agent_root.set_visible(false);
         } else {
             widgets.agent_root.set_visible(true);
             let width = widgets.agent_paned.width();
             if width > 0 {
-                let target = (width - state.agent_width.get()).max(280);
-                widgets.agent_paned.set_position(target.min(width - 280));
+                let target = (width - state.agent_width.get()).max(EDITOR_MIN);
+                widgets.agent_paned.set_position(target.min(width - AGENT_MIN));
             }
         }
     }

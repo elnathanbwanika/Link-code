@@ -67,6 +67,32 @@ notebook.lc-notebook > stack > box { background-color: @lc_bg; }
 .lc-editor-added   { background-color: alpha(@lc_green, 0.18); }
 .lc-editor-removed { background-color: alpha(@lc_red, 0.18); }
 
+/* ------------------------------------------------------------ code editor */
+.lc-editor-body { background-color: @lc_bg; }
+.lc-editor-gutter {
+  background-color: #0b0b0b;
+  border-right: 1px solid @lc_border;
+}
+.lc-editor-scroll { background-color: @lc_bg; border: none; }
+.lc-editor-scroll > scrollbar { background-color: @lc_bg; }
+.lc-editor-scroll > scrollbar.vertical slider {
+  min-width: 8px; min-height: 28px; border-radius: 4px;
+  background-color: #4a4a4a; border: none;
+}
+.lc-editor-scroll > scrollbar.horizontal slider {
+  min-height: 8px; min-width: 28px; border-radius: 4px;
+  background-color: #4a4a4a; border: none;
+}
+.lc-editor-scroll > scrollbar slider:hover { background-color: #5c5c5c; }
+textview.lc-code text {
+  line-height: 1.6;
+}
+.lc-diff-bar {
+  background-color: alpha(@lc_card, 0.92);
+  border-bottom: 1px solid @lc_border;
+  padding: 2px 6px;
+}
+
 /* --------------------------------------------------------------- terminal */
 .lc-terminal-bar { min-height: 20px; }
 .lc-terminal {

@@ -190,6 +190,44 @@ impl FileDiff {
     }
 }
 
+/// Flatten two revisions into a single line stream for an inline review.
+///
+/// Unlike [`FileDiff::compute`], this keeps every line of both files (not just
+/// the hunks) and always places removals before the additions that replace
+/// them, so the editor can render the old content struck through directly
+/// above the new content.
+pub fn inline_diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
+    let diff = TextDiff::from_lines(old, new);
+    diff.iter_all_changes()
+        .map(|change| {
+            let text = change.value().trim_end_matches('\n').to_string();
+            let (kind, old_line, new_line) = match change.tag() {
+                ChangeTag::Equal => (
+                    DiffLineKind::Context,
+                    change.old_index().map(|i| i as u32 + 1),
+                    change.new_index().map(|i| i as u32 + 1),
+                ),
+                ChangeTag::Delete => (
+                    DiffLineKind::Removal,
+                    change.old_index().map(|i| i as u32 + 1),
+                    None,
+                ),
+                ChangeTag::Insert => (
+                    DiffLineKind::Addition,
+                    None,
+                    change.new_index().map(|i| i as u32 + 1),
+                ),
+            };
+            DiffLine {
+                kind,
+                old_line,
+                new_line,
+                text,
+            }
+        })
+        .collect()
+}
+
 /// Apply an exact-string edit, with a uniqueness check.
 ///
 /// This is the primitive behind [`edit_file`] and is intentionally strict:
@@ -303,6 +341,31 @@ mod tests {
         assert!(diff.is_empty());
         assert_eq!(diff.added, 0);
         assert_eq!(diff.removed, 0);
+    }
+
+    #[test]
+    fn inline_diff_keeps_every_line_and_orders_removals_first() {
+        let lines = inline_diff_lines("alpha\nbeta\ngamma\n", "alpha\ndelta\ngamma\n");
+        let rendered: Vec<(DiffLineKind, &str)> =
+            lines.iter().map(|line| (line.kind, line.text.as_str())).collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (DiffLineKind::Context, "alpha"),
+                (DiffLineKind::Removal, "beta"),
+                (DiffLineKind::Addition, "delta"),
+                (DiffLineKind::Context, "gamma"),
+            ]
+        );
+        assert_eq!(lines[1].old_line, Some(2));
+        assert_eq!(lines[2].new_line, Some(2));
+    }
+
+    #[test]
+    fn inline_diff_of_identical_files_is_all_context() {
+        let lines = inline_diff_lines("a\nb\n", "a\nb\n");
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|line| line.kind == DiffLineKind::Context));
     }
 
     #[test]

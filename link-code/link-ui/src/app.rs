@@ -113,7 +113,7 @@ pub fn run_with_paths(paths: Vec<PathBuf>) -> glib::ExitCode {
 /// Register the default accelerators, so everything is remappable in one place.
 pub fn install_accels(application: &adw::Application, config: &Config) {
     // (config key, window action, fallback accelerators)
-    let bindings: [(&str, &str, &str); 13] = [
+    let bindings: [(&str, &str, &str); 14] = [
         ("app.command_palette", "win.command-palette", "<Control><Shift>p|<Control>k"),
         ("file.open_folder", "win.open-folder", "<Control>o"),
         ("file.quick_open", "win.quick-open", "<Control>p"),
@@ -123,6 +123,7 @@ pub fn install_accels(application: &adw::Application, config: &Config) {
         ("view.toggle_sidebar", "win.toggle-sidebar", "<Control>b"),
         ("view.toggle_bottom", "win.toggle-bottom", "<Control>j"),
         ("view.toggle_agent", "win.toggle-agent", "<Control>backslash"),
+        ("view.toggle_wrap", "win.toggle-wrap", "<Alt>z"),
         ("app.settings", "win.settings", "<Control>comma"),
         ("app.models", "win.models", "<Control>m"),
         ("agent.cycle_mode", "win.cycle-mode", "<Shift>Tab"),
