@@ -22,6 +22,37 @@ pub(crate) fn object_schema(properties: Value, required: &[&str]) -> Value {
     })
 }
 
+/// Write `contents` to `path` atomically.
+///
+/// The bytes go to a temp file in the same directory and are renamed into
+/// place, so the editor, the explorer and any concurrent build never observe
+/// a half-written file. A failed write removes the temp file.
+pub(crate) fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| LinkError::io(parent, e))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("file");
+    let temp = parent.join(format!(".{name}.link-{stamp}.tmp"));
+
+    let result = (|| -> Result<()> {
+        let mut file = std::fs::File::create(&temp).map_err(|e| LinkError::io(&temp, e))?;
+        file.write_all(contents).map_err(|e| LinkError::io(&temp, e))?;
+        file.sync_all().map_err(|e| LinkError::io(&temp, e))?;
+        drop(file);
+        std::fs::rename(&temp, path).map_err(|e| LinkError::io(path, e))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
 /// Read a file to string, refusing binary content.
 pub(crate) fn read_text(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path).map_err(|e| LinkError::io(path, e))?;
@@ -189,13 +220,7 @@ impl Tool for WriteFileTool {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| LinkError::io(parent, e))?;
         }
-        // Show a live "writing…" state for large new files.
-        if previous.is_none() && content.len() > 8 * 1024 {
-            for chunk in content.as_bytes().chunks(8 * 1024) {
-                ctx.emit(&call.id, &String::from_utf8_lossy(chunk));
-            }
-        }
-        std::fs::write(&path, content.as_bytes()).map_err(|e| LinkError::io(&path, e))?;
+        write_atomic(&path, content.as_bytes())?;
         let display = ctx.sandbox.relative(&path);
         let summary = if previous.is_none() {
             format!("Wrote {display} ({} lines, new file)", content.lines().count())
@@ -207,6 +232,105 @@ impl Tool for WriteFileTool {
             apply_path: display,
             new_content: content,
             previous,
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// create_file
+// ---------------------------------------------------------------------------
+
+pub struct CreateFileTool;
+
+#[async_trait]
+impl Tool for CreateFileTool {
+    fn name(&self) -> &'static str {
+        "create_file"
+    }
+
+    fn description(&self) -> &'static str {
+        "Create a new file with the given contents. Fails if the file already exists; use `edit_file` or `write_file` for those. Parent directories are created automatically."
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            json!({
+                "path": { "type": "string", "description": "Workspace-relative path of the new file" },
+                "content": { "type": "string", "description": "Full contents of the new file" }
+            }),
+            &["path", "content"],
+        )
+    }
+
+    fn kind(&self) -> ActionKind {
+        ActionKind::Write
+    }
+
+    fn summarise(&self, call: &ToolCall) -> String {
+        let path = call.opt_str_arg("path").unwrap_or_else(|| "?".to_string());
+        let lines = call
+            .opt_str_arg("content")
+            .map(|content| content.lines().count())
+            .unwrap_or(0);
+        format!("Create `{path}` ({lines} lines)")
+    }
+
+    fn permission_request(&self, ctx: &ToolContext, call: &ToolCall) -> PermissionRequest {
+        let rendered = call.opt_str_arg("path").unwrap_or_default();
+        match ctx.sandbox.resolve(&rendered) {
+            Ok(path) if !path.exists() => {
+                let content = call.opt_str_arg("content").unwrap_or_default();
+                let display = ctx.sandbox.relative(&path);
+                let diff = FileDiff::compute(display, "", &content);
+                request_for_write(
+                    "create_file",
+                    &path,
+                    ctx.sandbox.root(),
+                    Some(diff.unified.clone()),
+                )
+            }
+            Ok(path) => PermissionRequest::new(
+                "create_file",
+                ActionKind::Write,
+                self.summarise(call),
+            )
+            .with_reason(format!("{} already exists", ctx.sandbox.relative(&path)))
+            .with_risk(RiskLevel::High),
+            Err(error) => PermissionRequest::new(
+                "create_file",
+                ActionKind::Write,
+                self.summarise(call),
+            )
+            .with_reason(error.to_string())
+            .with_risk(RiskLevel::High),
+        }
+    }
+
+    async fn run(&self, ctx: &ToolContext, call: &ToolCall) -> Result<ToolOutput> {
+        let relative = call.str_arg("path")?;
+        let content = call.str_arg("content")?;
+        let path = ctx.sandbox.resolve(&relative)?;
+        if path.exists() {
+            return Err(LinkError::other(format!(
+                "{} already exists; use edit_file or write_file instead of create_file",
+                ctx.sandbox.relative(&path)
+            )));
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| LinkError::io(parent, e))?;
+        }
+        write_atomic(&path, content.as_bytes())?;
+        let display = ctx.sandbox.relative(&path);
+        let diff = FileDiff::compute(display.clone(), "", &content);
+        Ok(ToolOutput::text(format!(
+            "Created {display} ({} lines)",
+            content.lines().count()
+        ))
+        .with_display(ToolDisplay::Diff {
+            diff,
+            apply_path: display,
+            new_content: content,
+            previous: None,
         }))
     }
 }
@@ -297,7 +421,7 @@ impl Tool for EditFileTool {
             &call.str_arg("new_string")?,
             call.bool_arg("replace_all").unwrap_or(false),
         )?;
-        std::fs::write(&path, updated.as_bytes()).map_err(|e| LinkError::io(&path, e))?;
+        write_atomic(&path, updated.as_bytes())?;
         let display = ctx.sandbox.relative(&path);
         Ok(
             ToolOutput::text(format!("Edited {display} {}", diff.summary())).with_display(
@@ -432,7 +556,7 @@ impl Tool for MultiEditTool {
 
     async fn run(&self, ctx: &ToolContext, call: &ToolCall) -> Result<ToolOutput> {
         let (path, updated, previous, diff) = Self::plan(ctx, call)?;
-        std::fs::write(&path, updated.as_bytes()).map_err(|e| LinkError::io(&path, e))?;
+        write_atomic(&path, updated.as_bytes())?;
         let display = ctx.sandbox.relative(&path);
         Ok(
             ToolOutput::text(format!("Edited {display} {}", diff.summary())).with_display(
@@ -461,6 +585,9 @@ impl ListDirTool {
         let walker = ignore::WalkBuilder::new(root)
             .max_depth(Some(depth.max(1)))
             .standard_filters(true)
+            // Respect an explicit `.gitignore` even when the folder is not a
+            // git checkout (the editor may be opened on a plain directory).
+            .require_git(false)
             .hidden(false)
             .build();
         for result in walker {
@@ -714,5 +841,31 @@ mod tests {
         let request = WriteFileTool.permission_request(&ctx, &call);
         assert!(request.mandatory);
         assert_eq!(request.risk, RiskLevel::High);
+    }
+
+    #[tokio::test]
+    async fn create_file_writes_new_files_and_refuses_existing_ones() {
+        let dir = workspace();
+        let ctx = context(dir.path());
+        let call = ToolCall::new(
+            "1",
+            "create_file",
+            json!({"path": "src/created.rs", "content": "pub fn created() {}\n"}),
+        );
+        let output = CreateFileTool.run(&ctx, &call).await.unwrap();
+        assert!(dir.path().join("src/created.rs").exists());
+        match output.display {
+            ToolDisplay::Diff { diff, previous, .. } => {
+                assert!(previous.is_none());
+                assert!(diff.is_new);
+            }
+            other => panic!("expected a diff display, got {other:?}"),
+        }
+        let again = ToolCall::new(
+            "2",
+            "create_file",
+            json!({"path": "src/created.rs", "content": "clobber\n"}),
+        );
+        assert!(CreateFileTool.run(&ctx, &again).await.is_err());
     }
 }

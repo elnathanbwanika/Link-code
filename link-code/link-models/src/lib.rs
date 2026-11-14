@@ -18,16 +18,17 @@ pub mod ollama;
 pub mod openai;
 pub mod pricing;
 pub mod provider;
+pub mod proxy;
 pub mod registry;
 pub mod sse;
 pub mod toolcall;
 pub mod types;
 
 pub use error::{LinkModelError, ModelResult};
+pub use openai::sanitize_api_key;
 pub use provider::{ModelProvider, ModelStream, ProviderFactory};
-pub use registry::{
-    default_model_configs, ModelConfig, ModelRegistry, ModelRole, ModelStats, ProviderKind,
-};
+pub use proxy::{ProxyProtocol, ProxySettings};
+pub use registry::{ModelConfig, ModelRegistry, ModelRole, ModelStats, ProviderKind};
 pub use types::{
     Capabilities, ChatMessage, ChatRequest, FinishReason, ImageAttachment, ModelInfo, Role,
     StreamEvent, ToolCallRequest, Usage,

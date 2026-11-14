@@ -96,7 +96,14 @@ impl Sandbox {
             }
             match (ancestor.parent(), ancestor.file_name()) {
                 (Some(parent), Some(name)) => {
-                    suffix = Path::new(name).join(&suffix);
+                    // `Path::new(name).join("")` appends a trailing separator,
+                    // which turns a not-yet-created file into a directory path
+                    // (`new.txt/`) and makes every write fail with EISDIR.
+                    suffix = if suffix.as_os_str().is_empty() {
+                        PathBuf::from(name)
+                    } else {
+                        Path::new(name).join(&suffix)
+                    };
                     ancestor = parent;
                 }
                 _ => break,
@@ -230,6 +237,20 @@ mod tests {
         let sb = Sandbox::new(dir.path()).unwrap();
         let resolved = sb.resolve("src/deep/new.rs").unwrap();
         assert!(resolved.starts_with(std::fs::canonicalize(dir.path()).unwrap()));
+    }
+
+    #[test]
+    fn unresolved_paths_have_no_trailing_separator() {
+        let dir = tmp();
+        let sb = Sandbox::new(dir.path()).unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        // A trailing separator here used to make every new-file write fail
+        // with EISDIR, because the path was treated as a directory.
+        assert_eq!(sb.resolve("new.txt").unwrap(), root.join("new.txt"));
+        assert_eq!(
+            sb.resolve("src/deep/new.rs").unwrap(),
+            root.join("src/deep/new.rs")
+        );
     }
 
     #[test]

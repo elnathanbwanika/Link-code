@@ -18,8 +18,10 @@ use std::sync::Arc;
 
 use link_core::tool::{Tool, ToolRegistry};
 
-pub use fs_tools::{EditFileTool, ListDirTool, MultiEditTool, ReadFileTool, WriteFileTool};
-pub use misc::{AskUserTool, TodoWriteTool, WebFetchTool};
+pub use fs_tools::{
+    CreateFileTool, EditFileTool, ListDirTool, MultiEditTool, ReadFileTool, WriteFileTool,
+};
+pub use misc::{AskUserTool, UpdateTasksTool, WebFetchTool};
 pub use search::{GlobTool, GrepTool};
 pub use shell::BashTool;
 
@@ -27,13 +29,14 @@ pub use shell::BashTool;
 pub const BUILTIN_TOOL_NAMES: &[&str] = &[
     "read_file",
     "write_file",
+    "create_file",
     "edit_file",
     "multi_edit",
     "list_dir",
     "glob",
     "grep",
     "bash",
-    "todo_write",
+    "update_tasks",
     "web_fetch",
     "ask_user",
 ];
@@ -46,13 +49,14 @@ pub fn builtin_registry(enable_web: bool) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(ReadFileTool));
     registry.register(Arc::new(WriteFileTool));
+    registry.register(Arc::new(CreateFileTool));
     registry.register(Arc::new(EditFileTool));
     registry.register(Arc::new(MultiEditTool));
     registry.register(Arc::new(ListDirTool));
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
     registry.register(Arc::new(BashTool));
-    registry.register(Arc::new(TodoWriteTool));
+    registry.register(Arc::new(UpdateTasksTool));
     registry.register(Arc::new(AskUserTool));
     if enable_web {
         registry.register(Arc::new(WebFetchTool));

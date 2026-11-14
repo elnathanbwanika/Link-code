@@ -14,7 +14,48 @@ use crate::error::{classify_http, LinkModelError, ModelResult};
 use crate::provider::{ConnectionReport, ModelProvider, ModelStream};
 use crate::registry::{ModelConfig, ProviderKind};
 use crate::sse::{finish_reason, json_events, truncate, ThinkSplitter};
-use crate::types::{Capabilities, ChatMessage, ChatRequest, ImageAttachment, ModelInfo, Role, StreamEvent, Usage};
+use crate::types::{Capabilities, ChatMessage, ChatRequest, FinishReason, ImageAttachment, ModelInfo, Role, StreamEvent, Usage};
+
+/// Strip decoration that comes along when a key is copied from a dashboard or
+/// a shell: wrapping quotes, a `Bearer` prefix, a header name, a BOM and
+/// zero-width characters. Sending any of those turns a valid key into HTTP 401.
+pub fn sanitize_api_key(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(
+                    *c,
+                    '\u{feff}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}'
+                )
+        })
+        .collect();
+
+    let mut key = cleaned.trim();
+    for _ in 0..2 {
+        key = key
+            .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+            .trim();
+        match strip_key_prefix(key) {
+            Some(stripped) => key = stripped,
+            None => break,
+        }
+    }
+    key.trim_matches(|c| c == '"' || c == '\'' || c == '`')
+        .trim()
+        .to_string()
+}
+
+fn strip_key_prefix(text: &str) -> Option<&str> {
+    for prefix in ["authorization:", "api-key:", "x-api-key:", "bearer "] {
+        if let Some(head) = text.get(..prefix.len()) {
+            if head.eq_ignore_ascii_case(prefix) {
+                return Some(text[prefix.len()..].trim());
+            }
+        }
+    }
+    None
+}
 
 /// Shared HTTP plumbing for the text/JSON adapters.
 #[derive(Clone)]
@@ -26,13 +67,19 @@ pub(crate) struct HttpClient {
 
 impl HttpClient {
     pub(crate) fn new(extra_headers: &[(String, String)], api_key: Option<String>) -> Self {
-        let client = reqwest::Client::builder()
+        let client = crate::proxy::apply(reqwest::Client::builder())
             .user_agent(concat!("LinkCode/", env!("CARGO_PKG_VERSION")))
             // Local models can be slow to accept a connection when loading.
             .connect_timeout(std::time::Duration::from_secs(20))
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .build()
             .unwrap_or_default();
+        // A key pasted from a terminal often carries a trailing newline or
+        // space. Sending that verbatim makes otherwise valid keys fail with
+        // 401, so normalise it once here.
+        let api_key = api_key
+            .map(|key| sanitize_api_key(&key))
+            .filter(|key| !key.is_empty());
         Self {
             client,
             api_key,
@@ -48,6 +95,18 @@ impl HttpClient {
         builder
     }
 
+    /// Attach the API key in every shape OpenAI-compatible servers use.
+    ///
+    /// `Authorization: Bearer` is the standard; a few gateways (notably Azure
+    /// and some proxies) read `api-key` instead. Sending both is harmless for
+    /// servers that only look at one of them.
+    pub(crate) fn auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.api_key {
+            Some(key) => builder.bearer_auth(key).header("api-key", key.as_str()),
+            None => builder,
+        }
+    }
+
     /// Turn a non-success response into a categorised error.
     pub(crate) async fn check(&self, url: &str, response: reqwest::Response) -> ModelResult<reqwest::Response> {
         if response.status().is_success() {
@@ -56,15 +115,19 @@ impl HttpClient {
         let status = response.status();
         let headers = response.headers().clone();
         let body = response.text().await.unwrap_or_default();
+        // A 401 with no key attached is our configuration problem, not a
+        // rejected credential; reporting it as "rejected" sends the user
+        // hunting for a key that is actually missing.
+        if self.api_key.is_none() && matches!(status.as_u16(), 401 | 403) {
+            return Err(LinkModelError::MissingApiKey {
+                url: url.to_string(),
+            });
+        }
         Err(classify_http(url, status, &headers, truncate(body.trim(), 600)))
     }
 
     pub(crate) async fn get_json(&self, url: &str) -> ModelResult<Value> {
-        let builder = self.apply(self.client.get(url));
-        let builder = match &self.api_key {
-            Some(key) => builder.bearer_auth(key),
-            None => builder,
-        };
+        let builder = self.auth(self.apply(self.client.get(url)));
         let response = builder
             .send()
             .await
@@ -209,37 +272,58 @@ impl ModelProvider for OpenAiProvider {
     async fn list_models(&self) -> ModelResult<Vec<ModelInfo>> {
         let url = self.config.models_url();
         let value = self.http.get_json(&url).await?;
-        let entries = value
+        // OpenAI returns `{ "data": [...] }`; Ollama's compat layer and some
+        // gateways return a bare array or a `models` key. Accept all of them.
+        let entries: Vec<&Value> = if let Some(array) = value.as_array() {
+            array.iter().collect()
+        } else if let Some(array) = value.get("data").and_then(Value::as_array) {
+            array.iter().collect()
+        } else if let Some(array) = value.get("models").and_then(Value::as_array) {
+            array.iter().collect()
+        } else if let Some(array) = value
             .get("data")
+            .and_then(|data| data.get("models"))
             .and_then(Value::as_array)
-            .or_else(|| value.get("models").and_then(Value::as_array))
-            .cloned()
-            .unwrap_or_default();
+        {
+            array.iter().collect()
+        } else {
+            Vec::new()
+        };
         let mut models = Vec::new();
         for entry in entries {
-            if let Some(id) = entry.get("id").and_then(Value::as_str) {
+            let id = entry
+                .get("id")
+                .or_else(|| entry.get("name"))
+                .or_else(|| entry.get("model"))
+                .and_then(Value::as_str);
+            if let Some(id) = id {
+                if id.trim().is_empty() {
+                    continue;
+                }
                 let mut info = ModelInfo::new(id);
-                info.name = entry.get("name").and_then(Value::as_str).map(str::to_string);
+                info.name = entry
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .filter(|name| name != id);
                 info.context_window = entry
                     .get("context_length")
                     .or_else(|| entry.get("context_window"))
+                    .or_else(|| entry.get("max_context_length"))
                     .and_then(Value::as_u64)
                     .map(|value| value as usize);
                 models.push(info);
             }
         }
         models.sort_by(|a, b| a.id.cmp(&b.id));
+        models.dedup_by(|a, b| a.id == b.id);
         Ok(models)
     }
 
     async fn stream_chat(&self, request: ChatRequest) -> ModelResult<ModelStream> {
         let url = self.config.chat_url();
         let body = self.build_body(&request, true);
-        let builder = self.http.apply(self.http.client.post(&url)).json(&body);
-        let builder = match &self.http.api_key {
-            Some(key) => builder.bearer_auth(key),
-            None => builder,
-        };
+        let builder = self.http.auth(self.http.apply(self.http.client.post(&url)).json(&body));
         let response = builder.send().await.map_err(|e| LinkModelError::Connection {
             url: url.clone(),
             source: Box::new(e),
@@ -250,6 +334,12 @@ impl ModelProvider for OpenAiProvider {
         let mut splitter = ThinkSplitter::new();
         let stream = async_stream::stream! {
             futures_util::pin_mut!(events);
+            // Many gateways end the stream with `[DONE]` or a closed
+            // connection and never send a `finish_reason` chunk. Track it so a
+            // clean end can be reported as a normal finish instead of a
+            // truncated reply.
+            let mut finished = false;
+            let mut terminal = FinishReason::Stop;
             while let Some(item) = events.next().await {
                 match item {
                     Err(error) => {
@@ -306,8 +396,10 @@ impl ModelProvider for OpenAiProvider {
                         }
                         if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
                             if reason != "" && reason != "null" {
+                                terminal = finish_reason(Some(reason));
+                                finished = true;
                                 yield Ok(StreamEvent::Done {
-                                    finish_reason: finish_reason(Some(reason)),
+                                    finish_reason: terminal.clone(),
                                 });
                             }
                         }
@@ -316,6 +408,11 @@ impl ModelProvider for OpenAiProvider {
             }
             for event in splitter.flush() {
                 yield Ok(event);
+            }
+            // The stream ended without an explicit finish reason: `[DONE]` was
+            // seen or the server closed cleanly. That is a complete reply.
+            if !finished {
+                yield Ok(StreamEvent::Done { finish_reason: terminal });
             }
         };
         Ok(Box::pin(stream))
@@ -328,11 +425,7 @@ impl ModelProvider for OpenAiProvider {
         if let Some(object) = body.as_object_mut() {
             object.remove("stream_options");
         }
-        let builder = self.http.apply(self.http.client.post(&url)).json(&body);
-        let builder = match &self.http.api_key {
-            Some(key) => builder.bearer_auth(key),
-            None => builder,
-        };
+        let builder = self.http.auth(self.http.apply(self.http.client.post(&url)).json(&body));
         let response = builder.send().await.map_err(|e| LinkModelError::Connection {
             url: url.clone(),
             source: Box::new(e),
@@ -397,4 +490,27 @@ fn extract_usage(value: &Value) -> Option<Usage> {
 /// Exposed for the registry so `provider_for` can be unit tested.
 pub fn make(config: ModelConfig, api_key: Option<String>) -> Arc<dyn ModelProvider> {
     Arc::new(OpenAiProvider::new(config, api_key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_api_key;
+
+    #[test]
+    fn sanitizes_pasted_keys() {
+        assert_eq!(sanitize_api_key("  sk-abc\n"), "sk-abc");
+        assert_eq!(sanitize_api_key("\"sk-abc\""), "sk-abc");
+        assert_eq!(sanitize_api_key("'sk-abc'"), "sk-abc");
+        assert_eq!(sanitize_api_key("Bearer sk-abc"), "sk-abc");
+        assert_eq!(sanitize_api_key("bearer   sk-abc"), "sk-abc");
+        assert_eq!(sanitize_api_key("Authorization: Bearer sk-abc"), "sk-abc");
+        assert_eq!(sanitize_api_key("api-key: sk-abc"), "sk-abc");
+        assert_eq!(sanitize_api_key("\u{feff}sk-\u{200b}abc"), "sk-abc");
+        assert_eq!(sanitize_api_key("   "), "");
+    }
+
+    #[test]
+    fn keeps_internal_characters() {
+        assert_eq!(sanitize_api_key("sk-a_b-c.d"), "sk-a_b-c.d");
+    }
 }

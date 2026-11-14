@@ -10,45 +10,47 @@ use serde_json::{json, Value};
 use crate::fs_tools::object_schema;
 
 // ---------------------------------------------------------------------------
-// todo_write
+// update_tasks
 // ---------------------------------------------------------------------------
 
-pub struct TodoWriteTool;
+pub struct UpdateTasksTool;
 
-impl TodoWriteTool {
+impl UpdateTasksTool {
     fn parse(call: &ToolCall) -> Result<Vec<TodoItem>> {
         let raw = call
             .arguments
-            .get("todos")
+            .get("tasks")
+            .or_else(|| call.arguments.get("todos"))
+            .or_else(|| call.arguments.get("items"))
             .cloned()
             .ok_or_else(|| LinkError::InvalidArgs {
-                tool: "todo_write".to_string(),
-                message: "`todos` is required".to_string(),
+                tool: "update_tasks".to_string(),
+                message: "`tasks` is required".to_string(),
             })?;
         let array = match raw {
             Value::Array(items) => items,
             Value::String(text) => serde_json::from_str::<Vec<Value>>(&text).map_err(|e| {
                 LinkError::InvalidArgs {
-                    tool: "todo_write".to_string(),
-                    message: format!("`todos` is not a JSON array: {e}"),
+                    tool: "update_tasks".to_string(),
+                    message: format!("`tasks` is not a JSON array: {e}"),
                 }
             })?,
             _ => {
                 return Err(LinkError::InvalidArgs {
-                    tool: "todo_write".to_string(),
-                    message: "`todos` must be an array of {text, status}".to_string(),
+                    tool: "update_tasks".to_string(),
+                    message: "`tasks` must be an array of {content, status}".to_string(),
                 })
             }
         };
         let mut items = Vec::new();
         for entry in array {
-            // Accept both `{"text": .., "status": ..}` and a bare string.
+            // Accept both `{"content": .., "status": ..}` and a bare string.
             let (text, status) = match entry {
                 Value::String(text) => (text, TodoStatus::Pending),
                 Value::Object(object) => {
                     let text = object
-                        .get("text")
-                        .or_else(|| object.get("content"))
+                        .get("content")
+                        .or_else(|| object.get("text"))
                         .and_then(Value::as_str)
                         .unwrap_or("")
                         .to_string();
@@ -65,11 +67,37 @@ impl TodoWriteTool {
                 items.push(TodoItem { text, status });
             }
         }
+        Self::normalise_statuses(&mut items);
         Ok(items)
     }
 
+    /// Keep the checklist honest: at most one task is in progress. When the
+    /// model sends several, the first wins and the rest go back to pending.
+    /// When it marks nothing in progress, the next pending task is promoted so
+    /// the checklist always shows what is being worked on right now.
+    fn normalise_statuses(items: &mut [TodoItem]) {
+        let mut seen = false;
+        for item in items.iter_mut() {
+            if item.status == TodoStatus::InProgress {
+                if seen {
+                    item.status = TodoStatus::Pending;
+                } else {
+                    seen = true;
+                }
+            }
+        }
+        if !seen {
+            if let Some(next) = items
+                .iter_mut()
+                .find(|item| item.status == TodoStatus::Pending)
+            {
+                next.status = TodoStatus::InProgress;
+            }
+        }
+    }
+
     fn render(items: &[TodoItem]) -> String {
-        let mut out = String::from("<todos>\n");
+        let mut out = String::from("<tasks>\n");
         for item in items {
             out.push_str(&format!(
                 "{} {} ({})\n",
@@ -78,38 +106,41 @@ impl TodoWriteTool {
                 item.status.label()
             ));
         }
-        out.push_str("</todos>");
+        out.push_str("</tasks>");
         out
     }
 }
 
 #[async_trait]
-impl Tool for TodoWriteTool {
+impl Tool for UpdateTasksTool {
     fn name(&self) -> &'static str {
-        "todo_write"
+        "update_tasks"
     }
 
     fn description(&self) -> &'static str {
-        "Replace the visible task list. Use it to plan multi-step work and to mark progress; the list is pinned at the top of the agent panel."
+        "Plan and track multi-step work. Pass the complete ordered task list. Exactly one task is in_progress at a time; mark each task completed when it is done. The checklist is pinned in the agent panel."
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             json!({
-                "todos": {
+                "tasks": {
                     "type": "array",
-                    "description": "The complete list, in order",
+                    "description": "The complete task list, in order",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "text": { "type": "string" },
-                            "status": { "type": "string", "enum": ["pending", "in_progress", "done"] }
+                            "content": { "type": "string", "description": "Short description of the task" },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "completed"]
+                            }
                         },
-                        "required": ["text", "status"]
+                        "required": ["content", "status"]
                     }
                 }
             }),
-            &["todos"],
+            &["tasks"],
         )
     }
 
@@ -121,11 +152,12 @@ impl Tool for TodoWriteTool {
     fn summarise(&self, call: &ToolCall) -> String {
         let count = call
             .arguments
-            .get("todos")
+            .get("tasks")
+            .or_else(|| call.arguments.get("todos"))
             .and_then(Value::as_array)
             .map(Vec::len)
             .unwrap_or(0);
-        format!("Update task list ({count} items)")
+        format!("Update tasks ({count})")
     }
 
     async fn run(&self, ctx: &ToolContext, call: &ToolCall) -> Result<ToolOutput> {
@@ -325,7 +357,7 @@ impl Tool for WebFetchTool {
                 message: "only http and https URLs are supported".to_string(),
             });
         }
-        let client = reqwest::Client::builder()
+        let client = link_core::proxy::apply(reqwest::Client::builder())
             .user_agent(concat!("LinkCode/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -365,33 +397,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn todo_write_replaces_the_list_and_updates_context() {
+    async fn update_tasks_replaces_the_list_and_updates_context() {
         let dir = tempfile::tempdir().unwrap();
         let ctx = context(dir.path());
         let call = ToolCall::new(
             "1",
-            "todo_write",
-            json!({"todos": [
-                {"text": "read the code", "status": "done"},
-                {"text": "write the patch", "status": "in_progress"}
+            "update_tasks",
+            json!({"tasks": [
+                {"content": "read the code", "status": "completed"},
+                {"content": "write the patch", "status": "in_progress"}
             ]}),
         );
-        let output = TodoWriteTool.run(&ctx, &call).await.unwrap();
+        let output = UpdateTasksTool.run(&ctx, &call).await.unwrap();
         assert!(output.content.contains("write the patch"));
         assert_eq!(ctx.todo_snapshot().len(), 2);
         assert_eq!(ctx.todo_snapshot()[1].status, TodoStatus::InProgress);
     }
 
     #[tokio::test]
-    async fn todo_write_tolerates_string_arguments_and_bare_text() {
+    async fn update_tasks_keeps_exactly_one_task_in_progress() {
         let dir = tempfile::tempdir().unwrap();
         let ctx = context(dir.path());
         let call = ToolCall::new(
             "1",
-            "todo_write",
-            json!({ "todos": "[\"write tests\"]" }),
+            "update_tasks",
+            json!({"tasks": [
+                {"content": "one", "status": "in_progress"},
+                {"content": "two", "status": "in_progress"},
+                {"content": "three", "status": "pending"}
+            ]}),
         );
-        let output = TodoWriteTool.run(&ctx, &call).await.unwrap();
+        UpdateTasksTool.run(&ctx, &call).await.unwrap();
+        let items = ctx.todo_snapshot();
+        assert_eq!(items[0].status, TodoStatus::InProgress);
+        assert_eq!(items[1].status, TodoStatus::Pending);
+        assert_eq!(items[2].status, TodoStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn update_tasks_promotes_the_first_pending_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        let call = ToolCall::new(
+            "1",
+            "update_tasks",
+            json!({"tasks": [
+                {"content": "first", "status": "pending"},
+                {"content": "second", "status": "pending"}
+            ]}),
+        );
+        UpdateTasksTool.run(&ctx, &call).await.unwrap();
+        let items = ctx.todo_snapshot();
+        assert_eq!(items[0].status, TodoStatus::InProgress);
+        assert_eq!(items[1].status, TodoStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn update_tasks_tolerates_string_arguments_and_bare_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        let call = ToolCall::new(
+            "1",
+            "update_tasks",
+            json!({ "tasks": "[\"write tests\"]" }),
+        );
+        let output = UpdateTasksTool.run(&ctx, &call).await.unwrap();
         assert!(output.content.contains("write tests"));
     }
 

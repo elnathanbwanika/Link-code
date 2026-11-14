@@ -40,7 +40,7 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &'static str {
-        "Run a shell command in the workspace directory. Use it for builds, tests and git. Long output is capped and the command is killed after the configured timeout."
+        "Run a shell command in the workspace directory. Use it for builds, tests and git, never to create or edit files. Long output is capped and the command is killed after the configured timeout."
     }
 
     fn parameters(&self) -> Value {
@@ -58,13 +58,8 @@ impl Tool for BashTool {
     }
 
     fn summarise(&self, call: &ToolCall) -> String {
-        let command = call.opt_str_arg("command").unwrap_or_default();
-        let first_line = command.lines().next().unwrap_or("").trim();
-        let mut short: String = first_line.chars().take(90).collect();
-        if first_line.chars().count() > 90 {
-            short.push('\u{2026}');
-        }
-        format!("Run `{short}`")
+        let _ = call;
+        "Run a shell command".to_string()
     }
 
     fn permission_request(&self, ctx: &ToolContext, call: &ToolCall) -> PermissionRequest {
@@ -74,6 +69,14 @@ impl Tool for BashTool {
 
     async fn run(&self, ctx: &ToolContext, call: &ToolCall) -> Result<ToolOutput, link_core::error::LinkError> {
         let command = call.str_arg("command")?;
+        // File mutations must go through the dedicated file tools so they are
+        // validated, permission-checked and streamed into the editor.
+        if link_core::permission::command_writes_files(&command) {
+            return Err(link_core::error::LinkError::other(
+                "Use write_file or edit_file to change files. Bash may not write project files: \
+                 heredocs, `sed -i`, `echo >`, `tee`, `dd` and node/python write scripts are rejected.",
+            ));
+        }
         let timeout = Duration::from_millis(
             call.u64_arg("timeout_ms")
                 .unwrap_or(ctx.shell_timeout.as_millis() as u64)
@@ -109,6 +112,12 @@ impl Tool for BashTool {
         let cancel = ctx.cancellation();
 
         loop {
+            // Both pipes are closed: the child is finished. Without this the
+            // loop would sit in `select!` until the timeout expired (the
+            // `else` arm can never run while the deadline branch is enabled).
+            if out_closed && err_closed {
+                break;
+            }
             tokio::select! {
                 _ = &mut deadline => {
                     timed_out = true;
@@ -142,7 +151,6 @@ impl Tool for BashTool {
                     }
                     Err(_) => err_closed = true,
                 },
-                else => break,
             }
         }
 
@@ -201,5 +209,44 @@ impl Tool for BashTool {
         Ok(ToolOutput::text(report)
             .truncate_to(cap)
             .with_display(display))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use link_core::paths::Sandbox;
+
+    fn context(root: &std::path::Path) -> ToolContext {
+        ToolContext::new(Sandbox::new(root).unwrap())
+    }
+
+    #[test]
+    fn summary_never_echoes_the_command() {
+        let call = ToolCall::new("1", "bash", json!({"command": "echo secret-token"}));
+        assert_eq!(BashTool.summarise(&call), "Run a shell command");
+    }
+
+    #[tokio::test]
+    async fn refuses_commands_that_write_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        let call = ToolCall::new(
+            "1",
+            "bash",
+            json!({"command": "echo hi > index.html"}),
+        );
+        let error = BashTool.run(&ctx, &call).await.unwrap_err().to_string();
+        assert!(error.contains("write_file"), "{error}");
+        assert!(!dir.path().join("index.html").exists());
+    }
+
+    #[tokio::test]
+    async fn still_runs_read_only_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        let call = ToolCall::new("1", "bash", json!({"command": "printf 'ok'"}));
+        let output = BashTool.run(&ctx, &call).await.unwrap();
+        assert!(output.content.contains("ok"));
     }
 }

@@ -108,7 +108,7 @@ pub enum ToolDisplay {
         duration_ms: u64,
         output: String,
     },
-    /// A todo checklist (from `todo_write`).
+    /// A todo checklist (from `update_tasks`).
     Todos(Vec<TodoItem>),
     /// A question for the user, with tappable options.
     Question { question: String, options: Vec<String> },
@@ -180,7 +180,7 @@ pub struct ToolContext {
     pub output_cap: usize,
     /// Redact secret-looking values out of results before they reach the model.
     pub protect_secrets: bool,
-    /// Shared todo list, so `todo_write` and the UI tracker agree.
+    /// Shared todo list, so `update_tasks` and the UI tracker agree.
     pub todos: Arc<Mutex<Vec<TodoItem>>>,
     /// Cancelled by the Stop button.
     pub cancel: CancellationToken,

@@ -1,14 +1,18 @@
 //! Bundled assets: fonts, the app icon and the global stylesheet.
 //!
 //! Link Code never relies on the system theme. The three brand families are
-//! embedded in the binary and written to `~/.local/share/link-code/fonts` on
-//! first run, then referenced from the stylesheet with `file://` URLs. That
-//! keeps the look identical on a bare XFCE box and on a fully themed GNOME 46
-//! desktop, without shipping a font package.
+//! embedded in the binary and written to `~/.local/share/fonts` on first run,
+//! where fontconfig picks them up, then referenced by name from the stylesheet.
+//! That keeps the look identical on a bare XFCE box and on a fully themed
+//! GNOME 46 desktop, without shipping a font package.
+//!
+//! GTK's CSS dialect has no `@font-face` rule, so the fonts must reach Pango
+//! through fontconfig instead of the style sheet.
 
 use std::path::PathBuf;
 
 use gtk::gdk;
+use gtk::glib;
 
 use link_core::config as config_paths;
 
@@ -57,12 +61,16 @@ pub const LOGO_SVG: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 </svg>
 "##;
 
-/// Write the embedded fonts next to the user's data and return the directory.
+/// Write the embedded fonts into the user's fontconfig directory and return it.
+///
+/// `~/.local/share/fonts` is scanned by fontconfig by default, so the families
+/// become resolvable by name for Pango/GTK.
 pub fn install_fonts() -> PathBuf {
-    let dir = config_paths::data_dir().join("fonts");
+    let dir = glib::user_data_dir().join("fonts");
     if std::fs::create_dir_all(&dir).is_err() {
         return dir;
     }
+    let mut wrote_any = false;
     for (name, bytes) in FONTS {
         let path = dir.join(name);
         let needs_write = match std::fs::metadata(&path) {
@@ -70,10 +78,23 @@ pub fn install_fonts() -> PathBuf {
             Err(_) => true,
         };
         if needs_write {
-            if let Err(error) = std::fs::write(&path, bytes) {
-                tracing::warn!(?error, path = %path.display(), "could not install a bundled font");
+            match std::fs::write(&path, bytes) {
+                Ok(()) => wrote_any = true,
+                Err(error) => {
+                    tracing::warn!(?error, path = %path.display(), "could not install a bundled font")
+                }
             }
         }
+    }
+    // Refresh fontconfig's cache for the directory we just populated. This is
+    // best-effort: without `fc-cache` the fonts still resolve on the next login.
+    if wrote_any {
+        let _ = std::process::Command::new("fc-cache")
+            .arg("-f")
+            .arg(&dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
     dir
 }
@@ -96,33 +117,14 @@ pub fn install_icons() -> PathBuf {
     dir
 }
 
-/// The full stylesheet: the bundled design system plus `@font-face` rules that
-/// point at the installed font files.
+/// The bundled design system, copied verbatim.
 pub fn stylesheet() -> String {
-    let font_dir = install_fonts();
-    let mut css = String::new();
-    for (name, family, weight) in [
-        ("Syncopate-Regular.ttf", "Syncopate", 400),
-        ("Syncopate-Bold.ttf", "Syncopate", 700),
-        ("JetBrainsMono-Regular.ttf", "JetBrains Mono", 400),
-        ("JetBrainsMono-Medium.ttf", "JetBrains Mono", 500),
-        ("JetBrainsMono-Bold.ttf", "JetBrains Mono", 700),
-        ("Inter-Regular.otf", "Inter", 400),
-        ("Inter-Medium.otf", "Inter", 500),
-        ("Inter-SemiBold.otf", "Inter", 600),
-    ] {
-        css.push_str(&format!(
-            "@font-face {{ font-family: \"{family}\"; src: url(\"file://{}/{}\"); font-weight: {weight}; }}\n",
-            font_dir.display(),
-            name
-        ));
-    }
-    css.push_str(include_str!("../resources/style.css"));
-    css
+    include_str!("../resources/style.css").to_string()
 }
 
 /// Install fonts, icons and the stylesheet onto the default display.
 pub fn install() {
+    install_fonts();
     install_icons();
     let provider = gtk::CssProvider::new();
     provider.load_from_data(&stylesheet());
@@ -139,6 +141,17 @@ pub fn install() {
 pub fn apply_preferences(appearance: &link_core::config::AppearanceSettings) {
     let _ = appearance.high_contrast;
     if let Some(settings) = gtk::Settings::default() {
-        settings.set_gtk_application_prefer_dark_theme(true);
+        // libadwaita drives its own windows from `adw::StyleManager` below.
+        // Plain `gtk::Window`s (dialogs) follow the GTK theme instead, so pin
+        // the dark variant explicitly; without this the command palette and
+        // models dialog render on white.
+        if settings
+            .gtk_theme_name()
+            .map(|name| name != "Adwaita-dark")
+            .unwrap_or(true)
+        {
+            settings.set_gtk_theme_name(Some("Adwaita-dark"));
+        }
     }
+    adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
 }

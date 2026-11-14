@@ -457,6 +457,10 @@ pub struct CommandAnalysis {
     pub reasons: Vec<String>,
     /// Hard rule: always prompt, even in Full auto.
     pub mandatory: bool,
+    /// True when the command would write or modify files on disk. File edits
+    /// must go through the dedicated file tools, so the shell tool refuses
+    /// these commands with a corrective message.
+    pub writes_files: bool,
 }
 
 /// A dangerous pattern plus the reason it is dangerous.
@@ -562,6 +566,42 @@ fn segment_is_read_only(segment: &str) -> bool {
     }
 }
 
+/// Blank out quoted substrings so operators inside messages are not treated as
+/// shell syntax, while keeping a placeholder token so a redirection target like
+/// `> "my file.txt"` is still visible to the matcher. Backslash escapes inside
+/// double quotes are honoured.
+fn strip_quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in text.chars() {
+        match quote {
+            Some(active) => {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if active == '"' && ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == active {
+                    quote = None;
+                    out.push('x');
+                }
+            }
+            None => {
+                if ch == '\'' || ch == '"' {
+                    quote = Some(ch);
+                } else {
+                    out.push(ch);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Statically analyse a shell command for risk. Reads only the command string;
 /// it never executes anything.
 pub fn analyze_command(command: &str) -> CommandAnalysis {
@@ -602,7 +642,127 @@ pub fn analyze_command(command: &str) -> CommandAnalysis {
         risk,
         reasons,
         mandatory,
+        writes_files: command_writes_files(trimmed),
     }
+}
+
+/// True when a shell command would create or modify a project file.
+///
+/// The agent must use `write_file`, `edit_file` or `create_file` for edits so
+/// the IDE can stream and track them. Shell redirections, heredocs, `sed -i`,
+/// `tee` and inline scripts that touch the filesystem are all rejected; the
+/// matcher deliberately ignores `/dev/null` and file-descriptor duplications so
+/// ordinary commands like `cargo test 2>&1` still work.
+pub fn command_writes_files(command: &str) -> bool {
+    use std::sync::OnceLock;
+
+    static REDIRECT: OnceLock<Regex> = OnceLock::new();
+    static HEREDOC: OnceLock<Regex> = OnceLock::new();
+    static SED_INPLACE: OnceLock<Regex> = OnceLock::new();
+    static TEE: OnceLock<Regex> = OnceLock::new();
+    static TRUNCATE: OnceLock<Regex> = OnceLock::new();
+    static DD: OnceLock<Regex> = OnceLock::new();
+    static INLINE_SCRIPT: OnceLock<Regex> = OnceLock::new();
+    static PERL_INPLACE: OnceLock<Regex> = OnceLock::new();
+    static NESTED_SHELL: OnceLock<Regex> = OnceLock::new();
+
+    let text = command.trim();
+    if text.is_empty() {
+        return false;
+    }
+
+    // Redirections and friends are matched outside quotes so a commit message
+    // like `git commit -m "fix > bug"` is not mistaken for a file write.
+    let plain = strip_quoted(text);
+
+    // Group 1 captures a leading `&` (`&> file`), group 2 an `&` right after
+    // the operator. `2>&1` and `>&2` copy file descriptors and are not writes.
+    let redirect = REDIRECT.get_or_init(|| {
+        Regex::new(r"(?:^|[^>])(&?)>>?\s*(&?)\s*([^\s;&|()]+)").expect("valid regex")
+    });
+    for capture in redirect.captures_iter(&plain) {
+        if let Some(target) = capture.get(3) {
+            let target = target.as_str();
+            let fd_copy = capture.get(2).is_some()
+                && !target.is_empty()
+                && target.chars().all(|ch| ch.is_ascii_digit());
+            let ignored = fd_copy
+                || target.starts_with('&')
+                || target == "/dev/null"
+                || target == "/dev/stdout"
+                || target == "/dev/stderr";
+            if !ignored {
+                return true;
+            }
+        }
+    }
+
+    let heredoc = HEREDOC.get_or_init(|| Regex::new(r#"<<-?\s*[\w'"]"#).expect("valid regex"));
+    if heredoc.is_match(text) {
+        return true;
+    }
+
+    let sed = SED_INPLACE.get_or_init(|| {
+        Regex::new(r"(^|[\s;&|])sed\b[^;&|]*\s(?:-[A-Za-z]*i|--in-place)")
+            .expect("valid regex")
+    });
+    if sed.is_match(&plain) {
+        return true;
+    }
+
+    // Perl's `-i` edits files in place, just like `sed -i`.
+    let perl = PERL_INPLACE
+        .get_or_init(|| Regex::new(r"(^|[\s;&|])perl\b[^;&|]*\s-[A-Za-z]*i").expect("valid regex"));
+    if perl.is_match(&plain) {
+        return true;
+    }
+
+    let tee = TEE.get_or_init(|| Regex::new(r"(^|[\s;&|])tee(\s|$)").expect("valid regex"));
+    if tee.is_match(&plain) {
+        return true;
+    }
+
+    let truncate =
+        TRUNCATE.get_or_init(|| Regex::new(r"(^|[\s;&|])truncate(\s|$)").expect("valid regex"));
+    if truncate.is_match(&plain) {
+        return true;
+    }
+
+    let dd = DD.get_or_init(|| Regex::new(r"(^|[\s;&|])dd\s[^;&|]*\bof=").expect("valid regex"));
+    if dd.is_match(&plain) {
+        return true;
+    }
+
+    // Inline scripts are only a problem when they actually touch the
+    // filesystem; a one-liner that prints a value is fine.
+    let inline = INLINE_SCRIPT.get_or_init(|| {
+        Regex::new(r"(^|[\s;&|])(node|bun|deno|python3?|ruby|perl)\b[^;&|]*\s(-e|-c|eval)\b")
+            .expect("valid regex")
+    });
+    if inline.is_match(text)
+        && ["write", "open(", "fs.", "shutil", "Path(", "File."]
+            .iter()
+            .any(|needle| text.contains(needle))
+    {
+        return true;
+    }
+
+    // `bash -c '...'` hides the operators inside quotes. Pull the script out
+    // and check it as its own command.
+    let nested = NESTED_SHELL.get_or_init(|| {
+        Regex::new(r#"(?s)(?:^|[\s;&|])(?:bash|sh|zsh|dash|ksh)\b[^;&|]*?\s-[a-zA-Z]*c[a-zA-Z]*\s+(?:'([^']*)'|"([^"]*)")"#)
+            .expect("valid regex")
+    });
+    let script = nested
+        .captures(text)
+        .and_then(|capture| capture.get(1).or_else(|| capture.get(2)));
+    if let Some(script) = script {
+        if command_writes_files(script.as_str()) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Build the [`PermissionRequest`] for a shell command.
@@ -878,5 +1038,58 @@ mod tests {
         );
         assert_eq!(PermissionMode::Plan.next(), PermissionMode::FullAuto);
         assert_eq!(PermissionMode::FullAuto.next(), PermissionMode::Ask);
+    }
+
+    #[test]
+    fn detects_shell_file_writes() {
+        for command in [
+            "echo hi > index.html",
+            "printf 'x' >> src/main.rs",
+            "cat <<EOF > main.rs",
+            "sed -i 's/a/b/' src/main.rs",
+            "echo hi | tee out.txt",
+            "python3 -c 'open(\"x\", \"w\").write(\"hi\")'",
+            "dd if=/dev/zero of=file",
+            "printf 'x' > out.txt",
+            "cmd &> out.txt",
+            "cmd >& out.txt",
+            "bash -c 'echo hi > index.html'",
+            "sh -lc 'cat <<EOF > main.rs'",
+            "perl -pi -e 's/a/b/' src/main.rs",
+            "sed --in-place 's/a/b/' src/main.rs",
+            "echo hi > 'my file.txt'",
+            "echo hi > \"my file.txt\"",
+        ] {
+            assert!(command_writes_files(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn quoted_operators_are_not_file_writes() {
+        for command in [
+            "git commit -m \"fix > bug\"",
+            "echo \"a | b\"",
+            "sed -n 's/a/b/p' src/main.rs",
+        ] {
+            assert!(!command_writes_files(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn leaves_read_only_and_build_commands_alone() {
+        for command in [
+            "cargo test",
+            "cargo test 2>&1",
+            "cargo build > /dev/null 2>&1",
+            "git status",
+            "ls -la",
+            "python3 -c 'print(1)'",
+            "node -e 'console.log(42)'",
+            "bash -c 'cargo test 2>&1'",
+            "sh -c 'git status'",
+            "cmd >&2",
+        ] {
+            assert!(!command_writes_files(command), "{command}");
+        }
     }
 }

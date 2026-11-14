@@ -26,6 +26,8 @@ pub mod session;
 pub mod tool;
 
 pub use agent::{AgentHandle, AgentLoop, AgentMessage, AgentOptions, Approver};
+pub use link_models::proxy;
+pub use link_models::{ProxyProtocol, ProxySettings};
 pub use checkpoint::{Checkpoint, CheckpointEntry, CheckpointStore};
 pub use config::{Config, ConfigStore, ThinkingDisplay};
 pub use context::{human_tokens, ContextBreakdown, ContextMeter, ContextPart};

@@ -11,3 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 link-ui = { path = "../link-ui" }
+# Persist API keys in the OS keyring (libsecret). The feature lives here so the
+# libraries still build/test on machines without a Secret Service.
+link-core = { path = "../link-core", features = ["keyring"] }

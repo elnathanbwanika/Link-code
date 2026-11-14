@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{LinkError, Result};
 use crate::permission::{PermissionMode, PermissionRules};
 use crate::{APP_ID, DATA_FORMAT_VERSION};
+use link_models::ProxySettings;
 
 /// `~/.config/link-code`
 pub fn config_dir() -> PathBuf {
@@ -276,6 +277,8 @@ pub struct Config {
     pub terminal: TerminalSettings,
     pub git: GitSettings,
     pub privacy: PrivacySettings,
+    /// Outbound proxy used by every HTTP client the app builds.
+    pub proxy: ProxySettings,
     pub permissions: PermissionRules,
     /// Command id -> keybinding, e.g. `"agent.focus": "<Control>l"`.
     pub keybindings: BTreeMap<String, String>,
@@ -300,6 +303,7 @@ impl Default for Config {
             terminal: TerminalSettings::default(),
             git: GitSettings::default(),
             privacy: PrivacySettings::default(),
+            proxy: ProxySettings::default(),
             permissions: PermissionRules::default(),
             keybindings: default_keybindings(),
             layout: BTreeMap::new(),
@@ -457,6 +461,7 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use link_models::ProxyProtocol;
 
     #[test]
     fn default_round_trips_through_the_store() {
@@ -538,5 +543,26 @@ mod tests {
         assert_eq!(config.shell_timeout().as_secs(), 5);
         config.agent.shell_timeout_secs = 100_000;
         assert_eq!(config.shell_timeout().as_secs(), 3600);
+    }
+
+    #[test]
+    fn proxy_settings_default_to_direct_and_survive_a_round_trip() {
+        let config = Config::default();
+        assert!(!config.proxy.is_enabled());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let store = ConfigStore::at(&path);
+        let mut config = Config::default();
+        config.proxy.protocol = ProxyProtocol::Socks5;
+        config.proxy.host = "127.0.0.1".to_string();
+        config.proxy.port = 1080;
+        config.proxy.username = "u".to_string();
+        store.save(&config).unwrap();
+
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.proxy.protocol, ProxyProtocol::Socks5);
+        let url = loaded.proxy.url().unwrap();
+        assert!(url.starts_with("socks5h://u@127.0.0.1:1080"), "{url}");
     }
 }

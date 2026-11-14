@@ -29,6 +29,58 @@ pub enum ProviderKind {
     Ollama,
 }
 
+/// Normalise a base URL pasted by the user.
+///
+/// People paste anything: a bare host (`https://api.openai.com`), the full
+/// endpoint (`.../v1/chat/completions`) or a URL with a trailing slash. This
+/// turns all of them into the root the adapters expect, and adds the `/v1`
+/// segment when an OpenAI-compatible endpoint was given without a path.
+pub fn normalize_base_url(kind: ProviderKind, raw: &str) -> String {
+    let mut base = raw.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return base;
+    }
+    // Strip a pasted endpoint so the adapter can append its own path.
+    for suffix in [
+        "/chat/completions",
+        "/completions",
+        "/responses",
+        "/models",
+        "/api/chat",
+        "/api/tags",
+    ] {
+        if let Some(stripped) = base.strip_suffix(suffix) {
+            base = stripped.trim_end_matches('/').to_string();
+        }
+    }
+    match kind {
+        ProviderKind::OpenAiCompatible => {
+            if let Ok(url) = url::Url::parse(&base) {
+                if url.path().trim_matches('/').is_empty() {
+                    base.push_str("/v1");
+                }
+            }
+        }
+        // These adapters append the version themselves.
+        ProviderKind::Anthropic => {
+            if let Some(stripped) = base.strip_suffix("/v1") {
+                base = stripped.to_string();
+            }
+        }
+        ProviderKind::Gemini => {
+            if let Some(stripped) = base.strip_suffix("/v1beta") {
+                base = stripped.to_string();
+            }
+        }
+        ProviderKind::Ollama => {
+            if let Some(stripped) = base.strip_suffix("/api") {
+                base = stripped.to_string();
+            }
+        }
+    }
+    base
+}
+
 impl ProviderKind {
     pub const ALL: [ProviderKind; 4] = [
         ProviderKind::OpenAiCompatible,
@@ -60,7 +112,9 @@ impl ProviderKind {
     /// One-click preset applied when this provider is chosen.
     pub fn default_base_url(self) -> &'static str {
         match self {
-            ProviderKind::OpenAiCompatible => "http://localhost:11434/v1",
+            // There is no single "OpenAI-compatible" host; the user pastes
+            // the endpoint for whichever platform they use.
+            ProviderKind::OpenAiCompatible => "",
             ProviderKind::Anthropic => "https://api.anthropic.com",
             ProviderKind::Gemini => "https://generativelanguage.googleapis.com",
             ProviderKind::Ollama => "http://localhost:11434",
@@ -209,7 +263,7 @@ impl Default for ModelConfig {
             id: String::new(),
             display_name: String::new(),
             provider: ProviderKind::OpenAiCompatible,
-            base_url: ProviderKind::OpenAiCompatible.default_base_url().to_string(),
+            base_url: String::new(),
             model_id: String::new(),
             context_window: 32_768,
             max_output_tokens: 4_096,
@@ -257,7 +311,8 @@ impl ModelConfig {
 
     /// Chat completions URL for this endpoint.
     pub fn chat_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
+        let base = normalize_base_url(self.provider, &self.base_url);
+        let base = base.trim_end_matches('/');
         match self.provider {
             ProviderKind::OpenAiCompatible => format!("{base}/chat/completions"),
             ProviderKind::Anthropic => format!("{base}/v1/messages"),
@@ -270,7 +325,8 @@ impl ModelConfig {
 
     /// URL used by "Fetch models" / "Test connection".
     pub fn models_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
+        let base = normalize_base_url(self.provider, &self.base_url);
+        let base = base.trim_end_matches('/');
         match self.provider {
             ProviderKind::OpenAiCompatible => format!("{base}/models"),
             ProviderKind::Ollama => format!("{base}/api/tags"),
@@ -537,84 +593,40 @@ impl ModelRegistry {
     }
 }
 
-/// One-click presets offered by the "+ Add model" modal and the welcome tour.
-pub fn default_model_configs() -> Vec<ModelConfig> {
-    let mut presets = Vec::new();
+/// Test fixtures. The app ships **no** built-in models: every endpoint is
+/// entered by the user in the Models dialog.
+#[cfg(test)]
+fn sample_configs() -> Vec<ModelConfig> {
+    let mut configs = Vec::new();
 
-    let mut ollama = ModelConfig::new("Qwen2.5 Coder 7B (Ollama)", ProviderKind::Ollama, "qwen2.5-coder:7b");
-    ollama.context_window = 32_768;
-    ollama.max_output_tokens = 8_192;
-    ollama.capabilities = Capabilities {
-        streaming: true,
-        tools: true,
-        vision: false,
-        reasoning: false,
-        fim: true,
-    };
+    let mut ollama = ModelConfig::new("Local Ollama", ProviderKind::Ollama, "qwen2.5-coder:7b");
+    ollama.base_url = "http://localhost:11434".to_string();
     ollama.keep_alive = Some("30m".to_string());
-    ollama.notes = Some("Default local model. Pull it first with `ollama pull qwen2.5-coder:7b`.".to_string());
-    presets.push(ollama);
+    configs.push(ollama);
 
-    let mut lm_studio = ModelConfig::new("LM Studio (local)", ProviderKind::OpenAiCompatible, "local-model");
+    let mut lm_studio = ModelConfig::new("LM Studio", ProviderKind::OpenAiCompatible, "local-model");
     lm_studio.base_url = "http://localhost:1234/v1".to_string();
-    lm_studio.notes = Some("Start the LM Studio local server, then press Fetch models.".to_string());
-    presets.push(lm_studio);
+    configs.push(lm_studio);
 
-    let mut llama_cpp = ModelConfig::new("llama.cpp server (local)", ProviderKind::OpenAiCompatible, "local-model");
-    llama_cpp.base_url = "http://localhost:8080/v1".to_string();
-    presets.push(llama_cpp);
-
-    let mut openrouter = ModelConfig::new("Claude 3.5 Sonnet (OpenRouter)", ProviderKind::OpenAiCompatible, "anthropic/claude-3.5-sonnet");
+    let mut openrouter = ModelConfig::new("OpenRouter", ProviderKind::OpenAiCompatible, "anthropic/claude-3.5-sonnet");
     openrouter.base_url = "https://openrouter.ai/api/v1".to_string();
     openrouter.context_window = 200_000;
-    openrouter.notes = Some("OpenRouter also reads HTTP-Referer and X-Title headers.".to_string());
-    openrouter.extra_headers = vec![
-        ("HTTP-Referer".to_string(), "https://github.com/link-ecosystem/link-code".to_string()),
-        ("X-Title".to_string(), "Link Code".to_string()),
-    ];
-    presets.push(openrouter);
+    configs.push(openrouter);
 
-    let mut openai = ModelConfig::new("GPT-4o mini (OpenAI)", ProviderKind::OpenAiCompatible, "gpt-4o-mini");
+    let mut openai = ModelConfig::new("OpenAI", ProviderKind::OpenAiCompatible, "gpt-4o-mini");
     openai.base_url = "https://api.openai.com/v1".to_string();
     openai.context_window = 128_000;
-    openai.capabilities = Capabilities {
-        streaming: true,
-        tools: true,
-        vision: true,
-        reasoning: false,
-        fim: false,
-    };
-    presets.push(openai);
+    configs.push(openai);
 
-    let mut anthropic = ModelConfig::new("Claude Sonnet (Anthropic)", ProviderKind::Anthropic, "claude-sonnet-4-20250514");
+    let mut anthropic = ModelConfig::new("Anthropic", ProviderKind::Anthropic, "claude-sonnet-4-20250514");
     anthropic.context_window = 200_000;
-    anthropic.max_output_tokens = 8_192;
-    anthropic.capabilities = Capabilities {
-        streaming: true,
-        tools: true,
-        vision: true,
-        reasoning: true,
-        fim: false,
-    };
-    presets.push(anthropic);
+    configs.push(anthropic);
 
-    let mut gemini = ModelConfig::new("Gemini 2.0 Flash", ProviderKind::Gemini, "gemini-2.0-flash");
+    let mut gemini = ModelConfig::new("Gemini", ProviderKind::Gemini, "gemini-2.0-flash");
     gemini.context_window = 1_000_000;
-    gemini.capabilities = Capabilities {
-        streaming: true,
-        tools: true,
-        vision: true,
-        reasoning: false,
-        fim: false,
-    };
-    presets.push(gemini);
+    configs.push(gemini);
 
-    let mut deepseek = ModelConfig::new("DeepSeek Chat", ProviderKind::OpenAiCompatible, "deepseek-chat");
-    deepseek.base_url = "https://api.deepseek.com/v1".to_string();
-    deepseek.context_window = 64_000;
-    presets.push(deepseek);
-
-    presets
+    configs
 }
 
 #[cfg(test)]
@@ -623,7 +635,7 @@ mod tests {
 
     #[test]
     fn every_preset_is_valid_and_has_a_unique_id() {
-        let presets = default_model_configs();
+        let presets = sample_configs();
         assert!(presets.len() >= 6);
         let mut ids = std::collections::BTreeSet::new();
         for preset in &presets {
@@ -634,7 +646,7 @@ mod tests {
 
     #[test]
     fn role_assignment_falls_back_sensibly() {
-        let presets = default_model_configs();
+        let presets = sample_configs();
         let chat_id = presets[0].id.clone();
         let registry = ModelRegistry::from_configs(presets);
         assert_eq!(registry.by_role(ModelRole::Chat).unwrap().id, chat_id);
@@ -645,7 +657,7 @@ mod tests {
 
     #[test]
     fn removing_a_model_clears_its_roles() {
-        let mut registry = ModelRegistry::from_configs(default_model_configs());
+        let mut registry = ModelRegistry::from_configs(sample_configs());
         let id = registry.models[1].id.clone();
         registry.set_role(ModelRole::Fast, &id);
         registry.remove(&id);
@@ -655,7 +667,7 @@ mod tests {
 
     #[test]
     fn duplication_resets_stats_and_rekeys() {
-        let mut registry = ModelRegistry::from_configs(vec![default_model_configs().remove(0)]);
+        let mut registry = ModelRegistry::from_configs(vec![sample_configs().remove(0)]);
         let original = registry.models[0].id.clone();
         registry.record_usage(&original, 100, 100, 20.0);
         let copy = registry.duplicate(&original, "Copy").unwrap();
@@ -666,7 +678,7 @@ mod tests {
 
     #[test]
     fn export_never_contains_key_material() {
-        let mut registry = ModelRegistry::from_configs(default_model_configs());
+        let mut registry = ModelRegistry::from_configs(sample_configs());
         for model in &mut registry.models {
             model.has_api_key = true;
         }
@@ -677,7 +689,7 @@ mod tests {
 
     #[test]
     fn import_round_trips_and_rekeys_duplicates() {
-        let registry = ModelRegistry::from_configs(default_model_configs());
+        let registry = ModelRegistry::from_configs(sample_configs());
         let exported = registry.export_json();
         let imported = ModelRegistry::import_json(&exported).unwrap();
         assert_eq!(imported.models.len(), registry.models.len());
@@ -704,8 +716,9 @@ mod tests {
 
     #[test]
     fn merge_only_adds_new_models() {
-        let mut target = ModelRegistry::from_configs(vec![default_model_configs().remove(0)]);
-        let source = ModelRegistry::from_configs(default_model_configs());
+        let models = sample_configs();
+        let mut target = ModelRegistry::from_configs(vec![models[0].clone()]);
+        let source = ModelRegistry::from_configs(models);
         let before = target.models.len();
         let added = target.merge(source.clone());
         assert_eq!(target.models.len(), before + added);
@@ -732,5 +745,40 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("Display name")));
         assert!(problems.iter().any(|p| p.contains("Model ID")));
         assert!(problems.iter().any(|p| p.contains("Max output tokens")));
+    }
+
+    #[test]
+    fn base_urls_are_normalised_to_what_the_adapters_expect() {
+        // A bare host gets /v1 for OpenAI-compatible endpoints.
+        assert_eq!(
+            normalize_base_url(ProviderKind::OpenAiCompatible, "https://api.openai.com/"),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            normalize_base_url(ProviderKind::OpenAiCompatible, "http://localhost:11434"),
+            "http://localhost:11434/v1"
+        );
+        // A pasted full endpoint is reduced to its root.
+        assert_eq!(
+            normalize_base_url(
+                ProviderKind::OpenAiCompatible,
+                "https://api.deepseek.com/v1/chat/completions"
+            ),
+            "https://api.deepseek.com/v1"
+        );
+        // Existing versioned paths are left alone.
+        assert_eq!(
+            normalize_base_url(ProviderKind::OpenAiCompatible, "https://openrouter.ai/api/v1"),
+            "https://openrouter.ai/api/v1"
+        );
+        // Anthropic's adapter adds /v1 itself.
+        assert_eq!(
+            normalize_base_url(ProviderKind::Anthropic, "https://api.anthropic.com/v1"),
+            "https://api.anthropic.com"
+        );
+        // And chat_url never doubles the version segment.
+        let mut anthropic = ModelConfig::new("a", ProviderKind::Anthropic, "m");
+        anthropic.base_url = "https://api.anthropic.com/v1".to_string();
+        assert_eq!(anthropic.chat_url(), "https://api.anthropic.com/v1/messages");
     }
 }

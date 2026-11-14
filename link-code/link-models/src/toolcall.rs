@@ -61,6 +61,7 @@ pub fn parse(text: &str) -> ParsedToolCalls {
         }
         let body = segment.body;
         let mut parsed_any = false;
+        let problems_before = result.malformed.len();
         for line in body.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -74,7 +75,9 @@ pub fn parse(text: &str) -> ParsedToolCalls {
                 Err(problem) => result.malformed.push(problem),
             }
         }
-        if !parsed_any {
+        // Only add the block-level note when no line already explained the
+        // failure; otherwise a single bad line would produce two messages.
+        if !parsed_any && result.malformed.len() == problems_before {
             result.malformed.push(format!(
                 "a `tool` block contained no parseable JSON object: {}",
                 crate::sse::truncate(body.trim(), 120)

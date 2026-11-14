@@ -125,7 +125,7 @@ async fn port_is_open(port: u16) -> bool {
 
 /// Ollama exposes `GET /api/version`.
 async fn detect_ollama_version(base_url: &str) -> Option<String> {
-    let client = reqwest::Client::builder()
+    let client = crate::proxy::apply(reqwest::Client::builder())
         .timeout(Duration::from_millis(800))
         .build()
         .ok()?;

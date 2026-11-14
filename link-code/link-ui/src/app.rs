@@ -10,7 +10,8 @@ use gtk::{gio, Orientation};
 
 use link_core::config::{Config, ConfigStore};
 
-use crate::window::{LinkWindow, UiState};
+use crate::state::UiState;
+use crate::window::LinkWindow;
 use crate::{style, APP_ID};
 
 /// Run the application. Blocks until the last window closes.
@@ -32,7 +33,12 @@ pub fn run() -> glib::ExitCode {
 
     application.connect_activate(|application| {
         let config_store = ConfigStore::default_location();
-        let config = config_store.load_or_default();
+        let mut config = config_store.load_or_default();
+        // Upgrade the old 40-iteration default to 80 for better task completion.
+        if config.agent.max_tool_iterations == 40 {
+            config.agent.max_tool_iterations = 80;
+        }
+        style::apply_preferences(&config.appearance);
         if let Some(path) = config.last_workspace.clone().filter(|path| path.is_dir()) {
             if config.general.reopen_last_workspace {
                 LinkWindow::open(application, UiState::new(config_store, config), Some(path)).present();
@@ -45,7 +51,11 @@ pub fn run() -> glib::ExitCode {
 
     application.connect_open(|application, files, _hint| {
         let config_store = ConfigStore::default_location();
-        let config = config_store.load_or_default();
+        let mut config = config_store.load_or_default();
+        if config.agent.max_tool_iterations == 40 {
+            config.agent.max_tool_iterations = 80;
+        }
+        style::apply_preferences(&config.appearance);
         let path = files.first().and_then(|file| file.path());
         LinkWindow::open(application, UiState::new(config_store, config), path).present();
     });
@@ -69,7 +79,11 @@ pub fn run_with_paths(paths: Vec<PathBuf>) -> glib::ExitCode {
     let paths = Rc::new(RefCell::new(paths));
     application.connect_activate(move |application| {
         let config_store = ConfigStore::default_location();
-        let config = config_store.load_or_default();
+        let mut config = config_store.load_or_default();
+        if config.agent.max_tool_iterations == 40 {
+            config.agent.max_tool_iterations = 80;
+        }
+        style::apply_preferences(&config.appearance);
         let state = UiState::new(config_store, config);
         let path = paths.borrow_mut().drain(..).next();
         match path.or_else(|| {
@@ -83,7 +97,11 @@ pub fn run_with_paths(paths: Vec<PathBuf>) -> glib::ExitCode {
 
     application.connect_open(move |application, files, _hint| {
         let config_store = ConfigStore::default_location();
-        let config = config_store.load_or_default();
+        let mut config = config_store.load_or_default();
+        if config.agent.max_tool_iterations == 40 {
+            config.agent.max_tool_iterations = 80;
+        }
+        style::apply_preferences(&config.appearance);
         let state = UiState::new(config_store, config);
         let path = files.first().and_then(|file| file.path());
         LinkWindow::open(application, state, path).present();
@@ -94,33 +112,46 @@ pub fn run_with_paths(paths: Vec<PathBuf>) -> glib::ExitCode {
 
 /// Register the default accelerators, so everything is remappable in one place.
 pub fn install_accels(application: &adw::Application, config: &Config) {
-    let accel = |command: &str, fallback: &str| -> Vec<String> {
-        config
-            .keybindings
-            .get(command)
-            .cloned()
-            .unwrap_or_else(|| fallback.to_string())
-            .split('|')
-            .map(str::to_string)
-            .collect()
-    };
-    let bindings: [(&str, &str); 12] = [
-        ("app.command_palette", "<Control><Shift>p|<Control>k"),
-        ("file.open_folder", "<Control>o"),
-        ("file.quick_open", "<Control>p"),
-        ("file.save", "<Control>s"),
-        ("agent.focus", "<Control>l"),
-        ("view.toggle_sidebar", "<Control>b"),
-        ("view.toggle_bottom", "<Control>j"),
-        ("view.toggle_agent", "<Control>backslash"),
-        ("app.settings", "<Control>comma"),
-        ("app.models", "<Control>m"),
-        ("agent.cycle_mode", "<Shift>Tab"),
-        ("agent.stop", "Escape"),
+    // (config key, window action, fallback accelerators)
+    let bindings: [(&str, &str, &str); 13] = [
+        ("app.command_palette", "win.command-palette", "<Control><Shift>p|<Control>k"),
+        ("file.open_folder", "win.open-folder", "<Control>o"),
+        ("file.quick_open", "win.quick-open", "<Control>p"),
+        ("file.save", "win.save", "<Control>s"),
+        ("agent.focus", "win.focus-agent", "<Control>l"),
+        ("agent.new_session", "win.new-session", "<Control><Shift>n"),
+        ("view.toggle_sidebar", "win.toggle-sidebar", "<Control>b"),
+        ("view.toggle_bottom", "win.toggle-bottom", "<Control>j"),
+        ("view.toggle_agent", "win.toggle-agent", "<Control>backslash"),
+        ("app.settings", "win.settings", "<Control>comma"),
+        ("app.models", "win.models", "<Control>m"),
+        ("agent.cycle_mode", "win.cycle-mode", "<Shift>Tab"),
+        ("agent.stop", "win.stop", "Escape"),
     ];
-    for (command, fallback) in bindings {
-        application.set_accels_for_action(command, &accel(command, fallback).iter().map(String::as_str).collect::<Vec<_>>());
+    for (command, action, fallback) in bindings {
+        let configured = config.keybindings.get(command).map(String::as_str).unwrap_or("");
+        // The config always contains the backend defaults, so merge the
+        // built-in shortcuts with the saved ones: a documented accelerator
+        // like Ctrl+K must keep working even when the config lists only the
+        // other key for the same action.
+        let mut accels: Vec<&str> = Vec::new();
+        for key in configured.split('|').chain(fallback.split('|')) {
+            let key = key.trim();
+            if !key.is_empty() && !accels.iter().any(|existing| existing.eq_ignore_ascii_case(key)) {
+                accels.push(key);
+            }
+        }
+        application.set_accels_for_action(action, &accels);
     }
+}
+
+/// The `agent.send` shortcut (Ctrl+Enter) is installed by the composer itself.
+pub fn send_shortcut(config: &Config) -> String {
+    config
+        .keybindings
+        .get("agent.send")
+        .cloned()
+        .unwrap_or_else(|| "<Control>Return".to_string())
 }
 
 /// Kept for completeness: the orientation helper used by split view.

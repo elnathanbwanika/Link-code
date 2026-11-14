@@ -31,8 +31,15 @@ pub enum LinkModelError {
         body: String,
     },
 
-    #[error("the endpoint rejected the API key (HTTP {status})")]
-    Auth { status: u16, body: String },
+    #[error("the endpoint rejected the API key (HTTP {status}) at {url}: {body}")]
+    Auth {
+        status: u16,
+        url: String,
+        body: String,
+    },
+
+    #[error("no API key was sent to {url} \u{2014} add one in Models (Ctrl+M)")]
+    MissingApiKey { url: String },
 
     #[error("rate limited by the provider")]
     RateLimit {
@@ -65,7 +72,9 @@ impl LinkModelError {
     pub fn category(&self) -> ErrorCategory {
         match self {
             LinkModelError::Connection { .. } => ErrorCategory::Connection,
-            LinkModelError::Auth { .. } => ErrorCategory::Auth,
+            LinkModelError::Auth { .. } | LinkModelError::MissingApiKey { .. } => {
+                ErrorCategory::Auth
+            }
             LinkModelError::RateLimit { .. } => ErrorCategory::RateLimit,
             LinkModelError::ContextOverflow(_) => ErrorCategory::ContextOverflow,
             LinkModelError::Malformed(_) => ErrorCategory::Malformed,
@@ -102,7 +111,15 @@ impl LinkModelError {
 pub fn classify_http(url: &str, status: reqwest::StatusCode, headers: &reqwest::header::HeaderMap, body: String) -> LinkModelError {
     let code = status.as_u16();
     match code {
-        401 | 403 => LinkModelError::Auth { status: code, body },
+        401 | 403 => LinkModelError::Auth {
+            status: code,
+            url: url.to_string(),
+            body: if body.trim().is_empty() {
+                "(empty response body)".to_string()
+            } else {
+                body
+            },
+        },
         429 => LinkModelError::RateLimit {
             retry_after: parse_retry_after(headers),
             body,

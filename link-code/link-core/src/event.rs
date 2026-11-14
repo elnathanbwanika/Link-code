@@ -72,7 +72,7 @@ impl TodoStatus {
         match self {
             TodoStatus::Pending => "pending",
             TodoStatus::InProgress => "in progress",
-            TodoStatus::Done => "done",
+            TodoStatus::Done => "completed",
         }
     }
 }
@@ -99,6 +99,8 @@ pub enum ErrorKind {
     Connection,
     /// HTTP 401/403 — bad or missing API key.
     Auth,
+    /// The provider asked for a key and none was configured.
+    MissingApiKey,
     /// HTTP 429 — rate limited.
     RateLimit,
     /// The prompt no longer fits in the model's context window.
@@ -117,6 +119,7 @@ impl ErrorKind {
         match self {
             ErrorKind::Connection => "Could not reach the model endpoint",
             ErrorKind::Auth => "The endpoint rejected the API key",
+            ErrorKind::MissingApiKey => "No API key is configured",
             ErrorKind::RateLimit => "Rate limited by the provider",
             ErrorKind::ContextOverflow => "The conversation no longer fits in the context window",
             ErrorKind::MalformedToolCall => "The model produced a malformed tool call",
@@ -147,6 +150,17 @@ impl SuggestionSource {
             SuggestionSource::SlashCommand => "Slash command",
         }
     }
+}
+
+/// Which streamed argument field is growing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorStreamField {
+    /// `write_file` / `create_file` contents.
+    Content,
+    /// The text being replaced by `edit_file`.
+    OldString,
+    /// The replacement typed by `edit_file`.
+    NewString,
 }
 
 /// Every observable step of a turn.
@@ -190,6 +204,32 @@ pub enum AgentEvent {
     },
 
     // ---- edits ----------------------------------------------------------
+    /// A streamed `write_file` / `edit_file` / `create_file` call has started.
+    /// The UI opens the file, locks it and shows an "AI editing" badge; the
+    /// arguments themselves are never rendered in the chat.
+    EditorStreamStarted {
+        call_id: String,
+        tool: String,
+        path: String,
+        /// True when the target does not exist yet.
+        new_file: bool,
+    },
+    /// A growing string field inside the tool arguments.
+    EditorStreamDelta {
+        call_id: String,
+        field: EditorStreamField,
+        /// The newly decoded suffix, ready to insert.
+        text: String,
+    },
+    /// The arguments are complete. The UI unlocks the editor and lets the file
+    /// result reconcile the buffer with what was written to disk.
+    EditorStreamEnded {
+        call_id: String,
+        path: String,
+        /// False when the stream was interrupted (cancel or provider error), so
+        /// the UI should drop the half-typed buffer and restore the file.
+        completed: bool,
+    },
     DiffProposed {
         block_id: Uuid,
         call_id: String,
@@ -270,6 +310,9 @@ impl AgentEvent {
             AgentEvent::ToolStatusChanged { .. } => "ToolStatusChanged",
             AgentEvent::ToolOutputDelta { .. } => "ToolOutputDelta",
             AgentEvent::ToolResult { .. } => "ToolResult",
+            AgentEvent::EditorStreamStarted { .. } => "EditorStreamStarted",
+            AgentEvent::EditorStreamDelta { .. } => "EditorStreamDelta",
+            AgentEvent::EditorStreamEnded { .. } => "EditorStreamEnded",
             AgentEvent::DiffProposed { .. } => "DiffProposed",
             AgentEvent::ApprovalRequested { .. } => "ApprovalRequested",
             AgentEvent::ApprovalResolved { .. } => "ApprovalResolved",
