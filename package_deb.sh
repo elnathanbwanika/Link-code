@@ -3,7 +3,7 @@
 set -euo pipefail
 
 BINARY=/workspaces/Link-code/link-code/target/release/link-code
-VERSION=1.0.22
+VERSION=1.0.23
 ARCH=amd64
 PKGNAME=link-code
 PKGDIR=/tmp/link-code-deb
@@ -57,9 +57,9 @@ DESKTOP
 cat > "$PKGDIR/usr/share/icons/hicolor/scalable/apps/link-code.svg" <<'SVG'
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#000000"/>
-  <path d="M32 12 L44 34 L38 34 L38 52 L26 52 L26 34 L20 34 Z" fill="#ff6600"/>
-  <rect x="18" y="20" width="28" height="5" rx="2.5" fill="#ff6600" opacity="0.55"/>
+  <rect width="64" height="64" rx="14" fill="#252524"/>
+  <path d="M32 12 L44 34 L38 34 L38 52 L26 52 L26 34 L20 34 Z" fill="#E8927C"/>
+  <rect x="18" y="20" width="28" height="5" rx="2.5" fill="#E8927C" opacity="0.55"/>
 </svg>
 SVG
 
@@ -78,7 +78,7 @@ cat > "$PKGDIR/usr/share/metainfo/org.linkecosystem.LinkCode.metainfo.xml" <<'ME
   <description><p>Link Code is a GTK4 + libadwaita native IDE that pairs you with AI models for fast, agentic coding.</p></description>
   <url type="homepage">https://github.com/tracerdasu43/Link-code</url>
   <releases>
-    <release version="1.0.22" date="2026-11-14"/>
+    <release version="1.0.23" date="2026-11-20"/>
   </releases>
   <content_rating type="oars-1.1"/>
 </component>
