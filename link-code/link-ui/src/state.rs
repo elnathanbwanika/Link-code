@@ -691,9 +691,9 @@ impl UiState {
         let workspace = self.workspace_path()?;
         let mut slot = self.session.borrow_mut();
         if slot.is_none() {
-            // Start a fresh session. Older sessions stay available in the
-            // History tab; silently resuming one would give the model context
-            // the user cannot see on screen.
+            // Start a fresh session. `resume_last` reopens the newest existing
+            // conversation when a workspace opens, so this only runs when the
+            // user explicitly starts a new one (or the folder has no history).
             *slot = Some(Session::new(&workspace, self.chat_model_label()));
         }
         slot.as_ref().map(|session| session.id.clone())
