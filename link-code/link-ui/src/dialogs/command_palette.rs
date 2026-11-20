@@ -279,8 +279,8 @@ fn build_palette(state: &Rc<UiState>, title_text: &str, placeholder: &str) -> Pa
         .title(title_text)
         .modal(true)
         .resizable(true)
-        .default_width(620)
-        .default_height(440)
+        .default_width(520)
+        .default_height(400)
         .build();
     window.add_css_class("lc-dialog");
     if let Some(parent) = state.widgets().map(|widgets| widgets.window.clone()) {

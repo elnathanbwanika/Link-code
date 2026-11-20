@@ -66,8 +66,8 @@ fn show_modal(
         .title("Approval required")
         .modal(true)
         .resizable(true)
-        .default_width(560)
-        .default_height(420)
+        .default_width(480)
+        .default_height(360)
         .build();
     window.add_css_class("lc-dialog");
     if let Some(parent) = parent {
@@ -373,8 +373,8 @@ fn show_question(
         .title("The agent has a question")
         .modal(true)
         .resizable(true)
-        .default_width(520)
-        .default_height(260)
+        .default_width(440)
+        .default_height(220)
         .build();
     window.add_css_class("lc-dialog");
     if let Some(parent) = parent {

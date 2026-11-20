@@ -29,8 +29,8 @@ pub fn present(state: &Rc<UiState>) {
         .title("AI Providers")
         .modal(true)
         .resizable(true)
-        .default_width(780)
-        .default_height(740)
+        .default_width(620)
+        .default_height(540)
         .build();
     window.add_css_class("lc-dialog");
     window.add_css_class("lc-providers");
@@ -833,8 +833,8 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
         .title(if is_edit { "Edit provider" } else { "Add provider" })
         .modal(true)
         .resizable(true)
-        .default_width(640)
-        .default_height(780)
+        .default_width(520)
+        .default_height(600)
         .build();
     window.add_css_class("lc-dialog");
     window.add_css_class("lc-providers");
@@ -1167,8 +1167,8 @@ fn pick_model<F: Fn(String) + 'static>(parent: &gtk::Window, ids: &[String], on_
         .title("Pick a model")
         .modal(true)
         .resizable(true)
-        .default_width(540)
-        .default_height(520)
+        .default_width(460)
+        .default_height(420)
         .build();
     window.add_css_class("lc-dialog");
     window.set_transient_for(Some(parent));

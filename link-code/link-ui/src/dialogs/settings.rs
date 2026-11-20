@@ -17,8 +17,8 @@ pub fn present(state: &Rc<UiState>) {
         .title("Settings")
         .modal(true)
         .search_enabled(true)
-        .default_width(760)
-        .default_height(680)
+        .default_width(620)
+        .default_height(560)
         .build();
     window.add_css_class("lc-dialog");
     if let Some(parent) = state.widgets().map(|widgets| widgets.window.clone()) {

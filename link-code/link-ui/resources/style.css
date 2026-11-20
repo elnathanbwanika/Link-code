@@ -47,18 +47,18 @@ window, .lc-root {
   background-color: @lc_bg;
   color: @lc_text;
   font-family: "Inter", "Roboto", "Cantarell", sans-serif;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 label { color: @lc_text; }
-.lc-title    { font-family: "Inter", sans-serif; font-size: 13px; font-weight: 700; }
-.lc-heading  { font-family: "Inter", sans-serif; font-size: 15px; font-weight: 600; }
-.lc-section  { font-family: "Inter", sans-serif; font-size: 11px; font-weight: 600;
+.lc-title    { font-family: "Inter", sans-serif; font-size: 11px; font-weight: 700; }
+.lc-heading  { font-family: "Inter", sans-serif; font-size: 12.5px; font-weight: 600; }
+.lc-section  { font-family: "Inter", sans-serif; font-size: 10px; font-weight: 600;
                letter-spacing: 0.08em; color: @lc_muted; }
 .lc-mono, .lc-code, textview.lc-code text, .lc-path, .lc-num {
   font-family: "JetBrains Mono", monospace;
 }
-.lc-path     { font-size: 12px; color: @lc_muted; }
+.lc-path     { font-size: 10.5px; color: @lc_muted; }
 .lc-dim      { color: @lc_muted; }
 .lc-disabled { color: @lc_muted2; }
 .lc-accent   { color: @lc_accent; }
@@ -66,19 +66,19 @@ label { color: @lc_text; }
 .lc-warn     { color: @lc_amber; }
 .lc-error    { color: @lc_err; }
 .lc-info     { color: @lc_info; }
-.lc-tiny     { font-size: 11px; }
+.lc-tiny     { font-size: 10px; }
 .lc-bg       { background-color: @lc_bg; }
 
 /* --------------------------------------------------------------- header */
 .lc-header {
   background-color: @lc_bg;
   border-bottom: 1px solid @lc_border;
-  min-height: 44px;
+  min-height: 38px;
   padding: 0 8px;
 }
-.lc-logo-mark { color: @lc_accent; font-size: 14px; }
+.lc-logo-mark { color: @lc_accent; font-size: 12px; }
 .lc-header-button {
-  min-height: 30px; min-width: 30px;
+  min-height: 28px; min-width: 28px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -95,7 +95,7 @@ label { color: @lc_text; }
 
 /* --------------------------------------------------------- icon buttons */
 .lc-icon-btn {
-  min-width: 36px; min-height: 36px;
+  min-width: 32px; min-height: 32px;
   padding: 0;
   background-color: @lc_surface;
   border: 1px solid @lc_border;
@@ -122,7 +122,7 @@ label { color: @lc_text; }
 
 /* Round solid accent "+" button. */
 button.lc-plus {
-  min-width: 36px; min-height: 36px; padding: 0;
+  min-width: 32px; min-height: 32px; padding: 0;
   background-color: @lc_accent;
   color: @lc_dark_text;
   border: none; border-radius: 999px;
@@ -158,7 +158,7 @@ button.lc-plus image { color: @lc_dark_text; }
   background-color: @lc_sidebar;
   border-top: 1px solid @lc_border;
   min-height: 26px; padding: 0 10px;
-  font-size: 11.5px; color: @lc_muted;
+  font-size: 10px; color: @lc_muted;
 }
 .lc-status .lc-sep { color: @lc_muted2; }
 
@@ -166,8 +166,8 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 14px;
+  padding: 12px;
 }
 .lc-card:hover { border-color: @lc_border_strong; }
 .lc-card-selected {
@@ -177,8 +177,8 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-card-selected .lc-card-title { color: @lc_accent; }
 
 /* --------------------------------------------------------- sidebar shell */
-.lc-sidebar-header { padding: 14px 14px 8px 14px; }
-.lc-workspace-label { color: @lc_accent; font-size: 10.5px; font-weight: 700;
+.lc-sidebar-header { padding: 12px 12px 6px 12px; }
+.lc-workspace-label { color: @lc_accent; font-size: 9.5px; font-weight: 700;
   letter-spacing: 0.14em; }
 
 /* 32px rounded icon tile in the header. */
@@ -190,14 +190,14 @@ button.lc-plus image { color: @lc_dark_text; }
   color: @lc_accent;
 }
 .lc-tile {
-  min-width: 44px; min-height: 44px;
+  min-width: 40px; min-height: 40px;
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 12px;
   color: @lc_text;
 }
 .lc-tile-lg {
-  min-width: 48px; min-height: 48px;
+  min-width: 42px; min-height: 42px;
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 12px;
@@ -208,11 +208,11 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-workspace-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 16px;
-  padding: 14px;
+  border-radius: 14px;
+  padding: 12px;
 }
 .lc-workspace-name {
-  font-size: 18px; font-weight: 700; color: @lc_text;
+  font-size: 15px; font-weight: 700; color: @lc_text;
 }
 .lc-run-btn {
   min-width: 34px; min-height: 34px; padding: 0;
@@ -229,20 +229,20 @@ button.lc-pill-btn {
   min-height: 34px;
   padding: 0 12px;
   color: @lc_text;
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 500;
   transition: background-color 160ms ease, border-color 160ms ease;
 }
 button.lc-pill-btn:hover { border-color: @lc_border_strong; background-color: #3b3937; }
 
 /* Section heading rows -------------------------------------------------- */
-.lc-side-section { padding: 14px 14px 4px 14px; }
+.lc-side-section { padding: 12px 12px 4px 12px; }
 .lc-count-badge {
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 10.5px;
+  font-size: 9.5px;
   color: @lc_text;
 }
 
@@ -259,9 +259,9 @@ button.lc-pill-btn:hover { border-color: @lc_border_strong; background-color: #3
   background-color: @lc_accent_tint;
   border-color: @lc_accent_border;
 }
-.lc-thread-title { font-size: 13px; font-weight: 600; color: @lc_text; }
+.lc-thread-title { font-size: 11px; font-weight: 600; color: @lc_text; }
 .lc-thread-card.lc-card-selected .lc-thread-title { color: @lc_accent; }
-.lc-thread-preview { font-size: 11.5px; color: @lc_muted; }
+.lc-thread-preview { font-size: 10px; color: @lc_muted; }
 .lc-thread-action {
   background: transparent; border: none; border-radius: 8px;
   min-width: 24px; min-height: 24px; padding: 2px;
@@ -279,7 +279,7 @@ button.lc-ide-pill {
   padding: 2px 10px;
   min-height: 24px;
   color: @lc_accent;
-  font-size: 11px; font-weight: 700;
+  font-size: 10px; font-weight: 700;
   letter-spacing: 0.05em;
 }
 button.lc-ide-pill:hover { background-color: rgba(232, 146, 124, 0.24); }
@@ -301,15 +301,15 @@ button.lc-ide-pill:checked { background-color: @lc_accent; color: @lc_dark_text;
   border-color: rgba(232, 146, 124, 0.4);
 }
 .lc-file-row.file-selected label { color: @lc_accent; }
-.lc-file-row label { font-size: 12.5px; }
+.lc-file-row label { font-size: 11px; }
 .lc-folder-arrow {
   background: transparent; border: none; min-width: 16px; min-height: 16px;
-  padding: 0; color: @lc_muted2; font-size: 10px;
+  padding: 0; color: @lc_muted2; font-size: 9.5px;
 }
 .lc-folder-arrow:hover { color: @lc_text; }
 
 /* File-type glyphs (colour coded). */
-.lc-ftype { font-family: "JetBrains Mono", monospace; font-size: 10px;
+.lc-ftype { font-family: "JetBrains Mono", monospace; font-size: 9.5px;
   font-weight: 700; min-width: 18px; }
 .lc-ftype-md      { color: #6cb6ff; }
 .lc-ftype-json    { color: #d9b45b; }
@@ -368,15 +368,15 @@ entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
   border-radius: 16px;
   padding: 10px 14px;
 }
-.lc-block-system { padding: 3px 4px; color: @lc_muted2; font-size: 11px; }
+.lc-block-system { padding: 3px 4px; color: @lc_muted2; font-size: 10px; }
 .lc-block-error {
   background-color: rgba(229, 83, 75, 0.10);
   border: 1px solid rgba(229, 83, 75, 0.45);
   border-radius: 12px; padding: 10px 12px;
 }
 .lc-block-plan { border: 1px solid @lc_border; border-radius: 14px; padding: 12px; }
-.lc-body { font-size: 15px; line-height: 1.6; }
-.lc-body.lc-tiny { font-size: 11px; }
+.lc-body { font-size: 12.5px; line-height: 1.6; }
+.lc-body.lc-tiny { font-size: 10px; }
 
 /* Header line above an assistant reply. */
 .lc-reply-head { color: @lc_muted; padding-left: 4px; }
@@ -385,16 +385,16 @@ entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
 .lc-copy-btn {
   background: transparent; border: none; border-radius: 8px;
   padding: 2px 5px; color: @lc_muted2; min-height: 0;
-  font-size: 10px; transition: background-color 140ms ease, color 140ms ease;
+  font-size: 9.5px; transition: background-color 140ms ease, color 140ms ease;
 }
 .lc-copy-btn:hover { background-color: @lc_surface2; color: @lc_text; }
 
-.lc-suggestion-header { color: @lc_muted2; font-size: 10.5px; }
+.lc-suggestion-header { color: @lc_muted2; font-size: 9.5px; }
 
 .lc-badge {
   background-color: @lc_surface2; border: 1px solid @lc_border; border-radius: 999px;
   padding: 1px 8px; font-family: "JetBrains Mono", monospace;
-  font-size: 10.5px; color: @lc_muted;
+  font-size: 9.5px; color: @lc_muted;
 }
 .lc-badge-accent { color: @lc_accent; border-color: @lc_accent_border;
   background-color: @lc_accent_tint; }
@@ -411,7 +411,7 @@ entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
 
 .lc-chip {
   background-color: @lc_surface2; border: 1px solid @lc_border; border-radius: 999px;
-  padding: 2px 10px; font-size: 11px;
+  padding: 2px 10px; font-size: 10px;
 }
 .lc-chip-pending { color: @lc_muted; }
 .lc-chip-running { color: @lc_amber; border-color: rgba(214, 165, 98, 0.5); }
@@ -429,31 +429,31 @@ entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 .lc-edit-row:hover { border-color: @lc_border_strong; background-color: #32302e; }
-.lc-edit-file { font-family: "JetBrains Mono", monospace; font-size: 12.5px;
+.lc-edit-file { font-family: "JetBrains Mono", monospace; font-size: 11px;
   color: @lc_text; }
 button.lc-edit-file-btn {
   background: transparent; border: none; padding: 0; min-height: 0;
   min-width: 0; box-shadow: none;
 }
 button.lc-edit-file-btn:hover .lc-edit-file { color: @lc_accent; }
-.lc-edit-op { font-size: 11.5px; color: @lc_muted; }
+.lc-edit-op { font-size: 10px; color: @lc_muted; }
 .lc-edit-op.lc-error { color: @lc_err; }
 .lc-add-pill {
   background-color: rgba(111, 191, 115, 0.14);
   border-radius: 999px; padding: 0 7px;
-  font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+  font-family: "JetBrains Mono", monospace; font-size: 9.5px;
   color: @lc_ok;
 }
 .lc-del-pill {
   background-color: rgba(229, 83, 75, 0.14);
   border-radius: 999px; padding: 0 7px;
-  font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+  font-family: "JetBrains Mono", monospace; font-size: 9.5px;
   color: @lc_err;
 }
-.lc-edit-duration { font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+.lc-edit-duration { font-family: "JetBrains Mono", monospace; font-size: 9.5px;
   color: @lc_muted2; }
-.lc-edit-check { color: @lc_ok; font-size: 13px; }
-.lc-edit-chevron { color: @lc_muted2; font-size: 10px; }
+.lc-edit-check { color: @lc_ok; font-size: 11px; }
+.lc-edit-chevron { color: @lc_muted2; font-size: 9.5px; }
 button.lc-edit-chevron {
   background: transparent; border: none; padding: 0 2px;
   min-width: 16px; min-height: 16px; box-shadow: none;
@@ -468,9 +468,9 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   margin-top: 4px;
 }
 /* legacy chip classes kept for any older call sites */
-.lc-edit-glyph { color: @lc_accent; font-size: 11px; }
-.lc-edit-name { font-family: "JetBrains Mono", monospace; font-size: 12px; color: @lc_text; }
-.lc-edit-counts { font-size: 10.5px; font-family: "JetBrains Mono", monospace; }
+.lc-edit-glyph { color: @lc_accent; font-size: 10px; }
+.lc-edit-name { font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: @lc_text; }
+.lc-edit-counts { font-size: 9.5px; font-family: "JetBrains Mono", monospace; }
 
 /* ------------------------------------------------------ tool rows (chat) */
 .lc-tool-chip-root { margin-bottom: 2px; }
@@ -478,16 +478,16 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   background-color: @lc_surface;
   border: 1px solid @lc_border;
   border-radius: 12px;
-  padding: 6px 10px;
-  min-height: 36px;
+  padding: 5px 8px;
+  min-height: 32px;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 .lc-tool-row:hover { border-color: @lc_border_strong; }
-.lc-tool-glyph { color: @lc_muted; font-size: 12px; }
+.lc-tool-glyph { color: @lc_muted; font-size: 10.5px; }
 .lc-tool-glyph.lc-ok { color: @lc_ok; }
 .lc-tool-glyph.lc-error { color: @lc_err; }
-.lc-tool-label { font-size: 12.5px; color: @lc_text; }
-.lc-tool-detail { font-size: 11px; color: @lc_muted; }
+.lc-tool-label { font-size: 11px; color: @lc_text; }
+.lc-tool-detail { font-size: 10px; color: @lc_muted; }
 .lc-tool-spinner { color: @lc_accent; min-width: 13px; min-height: 13px; }
 .lc-tool-chip-body {
   background-color: @lc_bg;
@@ -502,8 +502,8 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   background-color: @lc_surface;
   border: 1px solid @lc_border;
   border-radius: 12px;
-  padding: 6px 10px;
-  min-height: 36px;
+  padding: 5px 8px;
+  min-height: 32px;
 }
 
 /* Small header badge shown while the agent owns an editor buffer. */
@@ -512,14 +512,14 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   border: 1px solid @lc_accent_border;
   border-radius: 999px;
   padding: 0 8px;
-  font-size: 10.5px;
+  font-size: 9.5px;
   color: @lc_accent;
 }
 .lc-ai-spinner { color: @lc_accent; min-width: 12px; min-height: 12px; }
 
 .lc-suggestion {
   background-color: @lc_surface; border: 1px solid @lc_border; border-radius: 12px;
-  padding: 6px 10px; font-size: 12px; color: @lc_text;
+  padding: 6px 10px; font-size: 10.5px; color: @lc_text;
   transition: border-color 160ms ease, color 160ms ease;
 }
 .lc-suggestion:hover { border-color: @lc_accent_border; color: @lc_accent; }
@@ -533,13 +533,13 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
 .lc-working-dot { color: @lc_accent; animation: lc-pulse 1.4s ease-in-out infinite; }
 
 /* ---------------------------------------------------------------- diffs */
-.lc-diff { font-family: "JetBrains Mono", monospace; font-size: 11.5px; }
+.lc-diff { font-family: "JetBrains Mono", monospace; font-size: 10px; }
 .lc-diff-header { background-color: @lc_surface; border-bottom: 1px solid @lc_border;
   padding: 6px 10px; border-radius: 12px 12px 0 0; }
 .diff-added   { background-color: rgba(111, 191, 115, 0.12); color: #b7e6bb; }
 .diff-removed { background-color: rgba(229, 83, 75, 0.12); color: #f0b3af; }
 .diff-context { color: @lc_muted; }
-.lc-gutter { color: @lc_muted2; font-size: 10.5px; }
+.lc-gutter { color: @lc_muted2; font-size: 9.5px; }
 .lc-add-count { color: @lc_ok; }
 .lc-del-count { color: @lc_err; }
 
@@ -555,7 +555,7 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   background-color: rgba(46, 45, 43, 0.88);
   border: 1px solid @lc_border_strong;
   border-radius: 999px;
-  min-width: 36px; min-height: 36px;
+  min-width: 32px; min-height: 32px;
   padding: 0;
   color: @lc_text;
 }
@@ -581,7 +581,7 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
   padding: 4px 10px 10px 10px;
 }
 .lc-context-row { padding: 0 4px 2px 4px; }
-.lc-context-label { font-size: 10.5px; color: @lc_muted; }
+.lc-context-label { font-size: 9.5px; color: @lc_muted; }
 .lc-context-meter, .lc-meter {
   min-height: 3px; margin: 0 2px 4px 2px;
 }
@@ -598,38 +598,38 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
 .lc-composer {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 28px;
-  padding: 10px 10px 8px 10px;
+  border-radius: 24px;
+  padding: 8px 8px 6px 8px;
   transition: border-color 160ms ease;
 }
 .lc-composer:focus-within { border-color: @lc_border_strong; }
 textview.lc-input, textview.lc-input text {
   background-color: transparent;
   color: @lc_text;
-  font-size: 14.5px;
+  font-size: 12px;
 }
 textview.lc-input { padding: 0; }
-.lc-composer-placeholder { color: @lc_muted; font-size: 14.5px; }
+.lc-composer-placeholder { color: @lc_muted; font-size: 12px; }
 .lc-composer-bar { padding: 2px 0 0 0; }
 
 button.lc-model-chip {
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 999px;
-  min-height: 32px;
+  min-height: 28px;
   padding: 0 10px;
   color: @lc_text;
-  font-size: 12px;
+  font-size: 10.5px;
 }
 button.lc-model-chip:hover { border-color: @lc_border_strong; }
 button.lc-mode-pill {
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 999px;
-  min-height: 32px;
+  min-height: 28px;
   padding: 0 12px;
   color: @lc_muted;
-  font-size: 11.5px;
+  font-size: 10px;
 }
 button.lc-mode-pill:hover { color: @lc_text; border-color: @lc_border_strong; }
 button.lc-mode-pill.full-auto {
@@ -638,7 +638,7 @@ button.lc-mode-pill.full-auto {
 }
 
 button.lc-send {
-  min-width: 36px; min-height: 36px; padding: 0;
+  min-width: 32px; min-height: 32px; padding: 0;
   background-color: @lc_surface2;
   color: @lc_muted2;
   border: 1px solid @lc_border;
@@ -653,7 +653,7 @@ button.lc-send.lc-send-active {
 }
 button.lc-send.lc-send-active image { color: @lc_dark_text; }
 button.lc-stop {
-  min-width: 36px; min-height: 36px; padding: 0;
+  min-width: 32px; min-height: 32px; padding: 0;
   background-color: @lc_accent;
   color: @lc_dark_text;
   border: none; border-radius: 12px;
@@ -685,7 +685,7 @@ popover.lc-task-popover > contents {
   color: @lc_text;
 }
 .lc-task-row { padding: 3px 0; }
-.lc-task-icon { font-size: 11px; }
+.lc-task-icon { font-size: 10px; }
 .lc-task-icon-pending { color: @lc_muted; }
 .lc-task-icon-active { color: @lc_accent; }
 .lc-task-icon-done { color: @lc_ok; }
@@ -696,21 +696,21 @@ button.lc-primary {
   background-color: @lc_accent_fill;
   color: @lc_dark_text;
   border: 1px solid @lc_accent_fill;
-  border-radius: 16px;
-  padding: 0 18px;
-  min-height: 44px;
-  font-size: 14px;
+  border-radius: 14px;
+  padding: 0 14px;
+  min-height: 38px;
+  font-size: 12px;
   font-weight: 600;
   transition: background-color 160ms ease;
 }
 button.lc-primary:hover { background-color: #f0a48f; }
 button.lc-primary:disabled { background-color: @lc_surface2; color: @lc_muted2;
   border-color: @lc_border; }
-button.lc-primary.wide { min-height: 48px; }
+button.lc-primary.wide { min-height: 42px; }
 
 button.lc-ghost {
   background: transparent; border: 1px solid @lc_border; border-radius: 12px;
-  padding: 4px 10px; min-height: 28px; font-size: 12px; color: @lc_text;
+  padding: 4px 10px; min-height: 28px; font-size: 10.5px; color: @lc_text;
 }
 button.lc-ghost:hover { background-color: @lc_surface2; border-color: @lc_border_strong; }
 button.lc-danger { border-color: rgba(229, 83, 75, 0.5); color: @lc_err; }
@@ -723,15 +723,15 @@ button.lc-accent-outline {
   padding: 0 14px;
   color: @lc_accent;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 11px;
 }
 button.lc-accent-outline:hover { background-color: rgba(232, 146, 124, 0.24); }
 
 entry.lc-input, textview.lc-input-text, spinbutton.lc-input, searchentry.lc-input {
   background-color: @lc_surface2; color: @lc_text;
   border: 1px solid @lc_border; border-radius: 12px;
-  padding: 6px 10px;
-  min-height: 36px;
+  padding: 5px 10px;
+  min-height: 32px;
 }
 entry.lc-input:focus-within, spinbutton.lc-input:focus-within,
 searchentry.lc-input:focus-within {
@@ -786,7 +786,7 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
 .lc-tabstrip { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
 .lc-tab {
   background: transparent; border: none; border-bottom: 2px solid transparent;
-  border-radius: 0; padding: 6px 10px; font-size: 12px; color: @lc_muted;
+  border-radius: 0; padding: 6px 10px; font-size: 10.5px; color: @lc_muted;
 }
 .lc-tab:hover { background-color: @lc_surface2; color: @lc_text; }
 .lc-tab:checked { color: @lc_text; border-bottom-color: @lc_accent; }
@@ -798,7 +798,7 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
   background-color: @lc_bg;
   color: @lc_text;
   font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
+  font-size: 11px;
 }
 .lc-editor-body { padding: 8px 0; }
 .lc-editor-body text selection { background-color: @lc_accent_tint; }
@@ -816,11 +816,11 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
   min-height: 34px;
   padding: 0 10px;
 }
-.lc-editor-title { font-size: 12.5px; color: @lc_text; }
-.lc-editor-path { font-size: 11px; color: @lc_muted2; font-family: "JetBrains Mono", monospace; }
+.lc-editor-title { font-size: 11px; color: @lc_text; }
+.lc-editor-path { font-size: 10px; color: @lc_muted2; font-family: "JetBrains Mono", monospace; }
 .lc-editor-tab {
   background: transparent; border: 1px solid transparent; border-radius: 9px;
-  padding: 3px 9px; font-size: 12px; color: @lc_muted;
+  padding: 3px 9px; font-size: 10.5px; color: @lc_muted;
 }
 .lc-editor-tab:hover { background-color: @lc_surface2; color: @lc_text; }
 .lc-editor-tab:checked { background-color: @lc_surface; color: @lc_text; border-color: @lc_border; }
@@ -830,7 +830,7 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
 .lc-notebook tabbar { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
 .lc-notebook tab {
   background: transparent; border: none; padding: 4px 10px;
-  color: @lc_muted; font-size: 11.5px;
+  color: @lc_muted; font-size: 10px;
 }
 .lc-notebook tab:hover { color: @lc_text; }
 .lc-notebook tab:checked { color: @lc_text; box-shadow: inset 0 -2px @lc_accent; }
@@ -839,13 +839,13 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
   background-color: @lc_bg;
   color: @lc_text;
   font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-size: 10.5px;
 }
 .lc-terminal-bar {
   background-color: @lc_sidebar;
   border-bottom: 1px solid @lc_border;
   min-height: 28px; padding: 0 10px;
-  color: @lc_muted; font-size: 11px;
+  color: @lc_muted; font-size: 10px;
 }
 
 /* ------------------------------------------------------------- dialogs */
@@ -858,12 +858,12 @@ window.lc-dialog, .lc-dialog > contents {
 .lc-dialog headerbar {
   background-color: @lc_sidebar;
   border-bottom: 1px solid @lc_border;
-  min-height: 48px;
+  min-height: 42px;
   padding: 0 8px;
   box-shadow: none;
 }
 .lc-dialog headerbar .title {
-  color: @lc_text; font-weight: 600; font-size: 14px;
+  color: @lc_text; font-weight: 600; font-size: 12px;
 }
 .lc-dialog headerbar windowcontrols button {
   background: transparent;
@@ -879,8 +879,8 @@ window.lc-dialog, .lc-dialog > contents {
 }
 /* Outlined accent circles in the providers header (help and add). */
 .lc-dialog headerbar button.lc-outline-circle {
-  min-width: 34px;
-  min-height: 34px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
   background-image: none;
   background-color: transparent;
@@ -893,7 +893,7 @@ window.lc-dialog, .lc-dialog > contents {
   background-color: @lc_accent_tint;
 }
 .lc-dialog headerbar button.lc-outline-circle image { color: @lc_accent; }
-.lc-dialog .dialog-body { padding: 16px; }
+.lc-dialog .dialog-body { padding: 12px; }
 .lc-dialog-scroll { background-color: @lc_sidebar; }
 
 /* Markdown code blocks inside chat. */
@@ -903,11 +903,11 @@ window.lc-dialog, .lc-dialog > contents {
   border-radius: 12px;
   padding: 10px 12px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-size: 10.5px;
   color: @lc_text;
 }
 .lc-code-block-header {
-  color: @lc_muted2; font-size: 10.5px;
+  color: @lc_muted2; font-size: 9.5px;
   font-family: "JetBrains Mono", monospace;
 }
 
@@ -923,9 +923,9 @@ popover.lc-model-popover > contents {
   padding: 0;
   box-shadow: none;
 }
-.lc-model-popover-inner { padding: 14px; }
-.lc-model-title { font-size: 16px; font-weight: 700; color: @lc_text; }
-.lc-model-subtitle { font-size: 11.5px; color: @lc_muted; }
+.lc-model-popover-inner { padding: 12px; }
+.lc-model-title { font-size: 13.5px; font-weight: 700; color: @lc_text; }
+.lc-model-subtitle { font-size: 10px; color: @lc_muted; }
 
 /* Horizontal provider pill tabs. */
 .lc-provider-tabs {
@@ -937,10 +937,10 @@ button.lc-provider-tab {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
   border-radius: 999px;
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 12px;
   color: @lc_muted;
-  font-size: 12px;
+  font-size: 10.5px;
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 button.lc-provider-tab:hover { color: @lc_text; border-color: @lc_border_strong; }
@@ -954,16 +954,16 @@ button.lc-provider-tab:checked {
 .lc-model-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 14px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 8px 10px;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 .lc-model-icon {
-  min-width: 36px; min-height: 36px;
+  min-width: 32px; min-height: 32px;
   border-radius: 12px;
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   color: @lc_text;
 }
@@ -976,10 +976,10 @@ button.lc-provider-tab:checked {
   background-color: @lc_accent_tint;
   border: 1.5px solid @lc_accent_border;
 }
-.lc-model-name { font-size: 13.5px; font-weight: 700; color: @lc_text; }
-.lc-model-id { font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: @lc_muted2; }
-.lc-model-ctx { font-size: 10.5px; color: @lc_muted; }
-.lc-model-wrench { color: @lc_info; font-size: 11px; }
+.lc-model-name { font-size: 11.5px; font-weight: 700; color: @lc_text; }
+.lc-model-id { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: @lc_muted2; }
+.lc-model-ctx { font-size: 9.5px; color: @lc_muted; }
+.lc-model-wrench { color: @lc_info; font-size: 10px; }
 .lc-model-radio {
   min-width: 18px; min-height: 18px;
   border: 1.5px solid @lc_border_strong;
@@ -994,24 +994,24 @@ button.lc-provider-tab:checked {
 
 /* ==================================================== providers screen */
 .lc-providers { background-color: @lc_bg; }
-.lc-providers-head { padding: 14px 18px; }
-.lc-providers-title { font-size: 18px; font-weight: 700; color: @lc_text; }
-.lc-providers-sub { font-size: 12px; color: @lc_muted; }
+.lc-providers-head { padding: 12px 16px; }
+.lc-providers-title { font-size: 15px; font-weight: 700; color: @lc_text; }
+.lc-providers-sub { font-size: 10.5px; color: @lc_muted; }
 
 .lc-banner {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 16px;
-  padding: 12px 14px;
+  border-radius: 14px;
+  padding: 10px 12px;
 }
-.lc-banner-label { font-size: 12.5px; font-weight: 600; color: @lc_text; }
-.lc-banner-text { font-size: 11.5px; color: @lc_muted; }
+.lc-banner-label { font-size: 11px; font-weight: 600; color: @lc_text; }
+.lc-banner-text { font-size: 10px; color: @lc_muted; }
 
 .lc-provider-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 16px;
-  padding: 12px 14px;
+  border-radius: 14px;
+  padding: 10px 12px;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 .lc-provider-card:hover { border-color: @lc_border_strong; }
@@ -1019,8 +1019,8 @@ button.lc-provider-tab:checked {
   background-color: @lc_accent_tint;
   border: 1.5px solid @lc_accent_border;
 }
-.lc-provider-name { font-size: 14px; font-weight: 700; color: @lc_text; }
-.lc-provider-model { font-family: "JetBrains Mono", monospace; font-size: 11px; color: @lc_muted; }
+.lc-provider-name { font-size: 12px; font-weight: 700; color: @lc_text; }
+.lc-provider-model { font-family: "JetBrains Mono", monospace; font-size: 10px; color: @lc_muted; }
 .lc-provider-model.lc-none { color: @lc_err; }
 
 .lc-status-badge {
@@ -1028,7 +1028,7 @@ button.lc-provider-tab:checked {
   border: 1px solid @lc_border;
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
 }
 .lc-status-badge.hosted { color: @lc_ok; border-color: rgba(111, 191, 115, 0.5); }
@@ -1040,11 +1040,11 @@ button.lc-type-chip {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
   border-radius: 12px;
-  min-height: 44px;
-  min-width: 88px;
+  min-height: 38px;
+  min-width: 80px;
   padding: 6px 10px;
   color: @lc_muted;
-  font-size: 12px;
+  font-size: 10.5px;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 button.lc-type-chip:hover { border-color: @lc_border_strong; color: @lc_text; }
@@ -1062,29 +1062,29 @@ button.lc-type-chip .openai { color: @lc_ok; }
 .lc-form-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 16px;
-  padding: 14px;
+  border-radius: 14px;
+  padding: 12px;
 }
-.lc-form-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: @lc_muted; }
-.lc-form-hint { font-size: 11px; color: @lc_muted2; }
-.lc-link { color: @lc_accent; font-size: 11.5px; }
-.lc-lock-badge { color: @lc_muted2; font-size: 10px; }
+.lc-form-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: @lc_muted; }
+.lc-form-hint { font-size: 10px; color: @lc_muted2; }
+.lc-link { color: @lc_accent; font-size: 10px; }
+.lc-lock-badge { color: @lc_muted2; font-size: 9.5px; }
 
 /* Provider icon tile, shared by the list and the add form. */
 .lc-provider-tile {
-  min-width: 44px; min-height: 44px;
+  min-width: 40px; min-height: 40px;
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
   border-radius: 12px;
   color: @lc_text;
 }
-.lc-provider-tile.lc-tile-lg { min-width: 48px; min-height: 48px; border-radius: 14px; }
+.lc-provider-tile.lc-tile-lg { min-width: 44px; min-height: 44px; border-radius: 12px; }
 .lc-provider-tile.anthropic { color: #d9a066; }
 .lc-provider-tile.gemini { color: #6cb6ff; }
 .lc-provider-tile.ollama { color: #b0a08e; }
 .lc-provider-tile.openai { color: @lc_ok; }
 .lc-provider-tile.local { color: @lc_info; }
-.lc-provider-tile label { color: @lc_text; font-size: 15px; font-weight: 700; }
+.lc-provider-tile label { color: @lc_text; font-size: 12.5px; font-weight: 700; }
 .lc-provider-tile.anthropic label { color: #d9a066; }
 .lc-provider-tile.gemini label { color: #6cb6ff; }
 .lc-provider-tile.ollama label { color: #b0a08e; }
@@ -1095,14 +1095,14 @@ button.lc-type-chip .openai { color: @lc_ok; }
 .lc-form-foot {
   background-color: @lc_sidebar;
   border-top: 1px solid @lc_border;
-  padding: 12px 18px;
+  padding: 10px 16px;
 }
-.lc-form-foot button.lc-primary { min-height: 40px; padding: 0 20px; }
+.lc-form-foot button.lc-primary { min-height: 36px; padding: 0 16px; }
 
 /* Advanced section of the add form. */
 .lc-advanced { color: @lc_text; }
 .lc-advanced > title {
-  font-size: 12px;
+  font-size: 10.5px;
   color: @lc_muted;
   padding: 4px 0;
 }
@@ -1138,7 +1138,7 @@ tooltip {
   border: 1px solid @lc_border_strong;
   border-radius: 8px;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: 10px;
 }
 separator { background-color: @lc_border; min-width: 1px; min-height: 1px; }
 

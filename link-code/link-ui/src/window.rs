@@ -28,16 +28,16 @@ use crate::state::{UiState, Widgets};
 use crate::widgets;
 
 /// Default window size: roughly a large terminal window, not a full-screen IDE.
-const DEFAULT_WIDTH: i32 = 1280;
-const DEFAULT_HEIGHT: i32 = 800;
+const DEFAULT_WIDTH: i32 = 960;
+const DEFAULT_HEIGHT: i32 = 620;
 /// Smallest size the three columns stay usable at.
-const MIN_WIDTH: i32 = 900;
-const MIN_HEIGHT: i32 = 560;
+const MIN_WIDTH: i32 = 860;
+const MIN_HEIGHT: i32 = 520;
 
 /// Minimum widths for the three columns, in pixels.
-const SIDEBAR_MIN: i32 = 260;
-const EDITOR_MIN: i32 = 360;
-const AGENT_MIN: i32 = 360;
+const SIDEBAR_MIN: i32 = 200;
+const EDITOR_MIN: i32 = 320;
+const AGENT_MIN: i32 = 300;
 /// Height kept for the editor and the bottom panel.
 const EDITOR_MIN_HEIGHT: i32 = 180;
 const BOTTOM_MIN_HEIGHT: i32 = 130;

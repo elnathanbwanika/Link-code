@@ -22,7 +22,7 @@ pub fn show_picker(state: &Rc<UiState>, anchor: &gtk::Widget) {
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
     content.add_css_class("lc-model-popover-inner");
-    content.set_width_request(420);
+    content.set_width_request(380);
 
     let models = Rc::new(state.registry.borrow().models.clone());
     let active = state.chat_model().map(|model| model.id);
