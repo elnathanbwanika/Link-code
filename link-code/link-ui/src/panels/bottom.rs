@@ -103,12 +103,16 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
             .as_str(),
     ));
     shell_label.add_css_class("lc-tiny");
-    shell_label.add_css_class("lc-dim");
+    shell_label.add_css_class("lc-terminal-path");
     shell_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     shell_label.set_hexpand(true);
     shell_label.set_xalign(0.0);
     shell_label.set_margin_start(6);
     bar.append(&shell_label);
+    let paste = gtk::Button::with_label("Paste");
+    paste.add_css_class("lc-ghost");
+    paste.add_css_class("lc-tiny");
+    bar.append(&paste);
     let clear = gtk::Button::with_label("Clear");
     clear.add_css_class("lc-ghost");
     clear.add_css_class("lc-tiny");
@@ -218,19 +222,19 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
             let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
 
-            // Terminal copy/paste, matching the usual terminal shortcuts.
+            // Terminal copy/paste. Ctrl+V is accepted alongside the usual
+            // Ctrl+Shift+V because that is what most people reach for, and
+            // Shift+Insert matches the X11 convention. Copy stays on
+            // Ctrl+Shift+C so Ctrl+C still interrupts the running command.
             if control && shift && keyval == gtk::gdk::Key::C {
                 view.emit_copy_clipboard();
                 return glib::Propagation::Stop;
             }
-            if control && shift && keyval == gtk::gdk::Key::V {
-                let clipboard = view.clipboard();
-                let terminal = terminal.clone();
-                clipboard.read_text_async(None::<&gtk::gio::Cancellable>, move |result| {
-                    if let Ok(Some(text)) = result {
-                        terminal.borrow_mut().send(text.as_bytes());
-                    }
-                });
+            let paste_shortcut = (control
+                && (keyval == gtk::gdk::Key::V || keyval == gtk::gdk::Key::v))
+                || (shift && keyval == gtk::gdk::Key::Insert);
+            if paste_shortcut {
+                paste_from_clipboard(&view, &terminal);
                 return glib::Propagation::Stop;
             }
 
@@ -243,6 +247,19 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
             }
         });
         terminal_output.add_controller(key);
+    }
+
+    // Middle-click paste, as in most Linux terminals.
+    {
+        let view = terminal_output.clone();
+        let terminal = terminal.clone();
+        let click = gtk::GestureClick::new();
+        click.set_button(gtk::gdk::BUTTON_MIDDLE);
+        click.connect_released(move |_, _, _, _| {
+            view.grab_focus();
+            paste_from_clipboard(&view, &terminal);
+        });
+        terminal_output.add_controller(click);
     }
 
     // Drain the reader thread on the GTK thread. A channel is used because
@@ -292,6 +309,14 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
         let panel = panel.clone();
         let state = state.clone();
         restart.connect_clicked(move |_| panel.restart(&state));
+    }
+    {
+        let view = terminal_output.clone();
+        let terminal = terminal.clone();
+        paste.connect_clicked(move |_| {
+            view.grab_focus();
+            paste_from_clipboard(&view, &terminal);
+        });
     }
     {
         let panel = panel.clone();
@@ -602,6 +627,17 @@ impl TerminalState {
         }
         self.view.render();
     }
+}
+
+/// Send the clipboard's text to the shell as if it were typed.
+fn paste_from_clipboard(view: &gtk::TextView, terminal: &Rc<RefCell<TerminalState>>) {
+    let clipboard = view.clipboard();
+    let terminal = terminal.clone();
+    clipboard.read_text_async(None::<&gtk::gio::Cancellable>, move |result| {
+        if let Ok(Some(text)) = result {
+            terminal.borrow_mut().send(text.as_bytes());
+        }
+    });
 }
 
 fn spawn_shell(

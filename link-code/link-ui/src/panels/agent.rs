@@ -400,11 +400,11 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     top_row.append(&tools);
 
     // ---- message log ----------------------------------------------------
-    let chat_list = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    chat_list.set_margin_start(12);
-    chat_list.set_margin_end(12);
+    let chat_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    chat_list.set_margin_start(10);
+    chat_list.set_margin_end(10);
     chat_list.set_margin_top(46);
-    chat_list.set_margin_bottom(8);
+    chat_list.set_margin_bottom(6);
 
     let chat_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)

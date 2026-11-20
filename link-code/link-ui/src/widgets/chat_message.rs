@@ -16,7 +16,9 @@ pub struct BlockView {
     header: gtk::Box,
     body: gtk::Box,
     raw: gtk::Label,
-    text: RefCell<String>,
+    /// Shared so the copy handler can outlive this view: reopened sessions
+    /// drop the `Rc<BlockView>` as soon as the row is in the log.
+    text: std::rc::Rc<RefCell<String>>,
     thinking: RefCell<String>,
     thinking_expander: gtk::Expander,
     thinking_label: gtk::Label,
@@ -83,7 +85,7 @@ impl BlockView {
             header,
             body,
             raw,
-            text: RefCell::new(String::new()),
+            text: std::rc::Rc::new(RefCell::new(String::new())),
             thinking: RefCell::new(String::new()),
             thinking_expander,
             thinking_label,
@@ -95,15 +97,16 @@ impl BlockView {
 
     /// Wire the copy button — must be called once after Self is wrapped in Rc.
     pub fn wire_copy_btn(self_rc: &std::rc::Rc<Self>) {
-        let weak = std::rc::Rc::downgrade(self_rc);
-        self_rc.copy_btn.connect_clicked(move |_| {
-            if let Some(this) = weak.upgrade() {
-                let text = this.text.borrow().clone();
-                if !text.is_empty() {
-                    if let Some(display) = gtk::gdk::Display::default() {
-                        display.clipboard().set_text(&text);
-                    }
+        // Hold the text buffer, never the view: the handler receives its own
+        // button, and loaded sessions drop the `Rc<BlockView>` immediately.
+        let text = self_rc.text.clone();
+        self_rc.copy_btn.connect_clicked(move |button| {
+            let text = text.borrow().clone();
+            if !text.is_empty() {
+                if let Some(display) = gtk::gdk::Display::default() {
+                    display.clipboard().set_text(&text);
                 }
+                confirm_copied(button);
             }
         });
     }
@@ -205,6 +208,22 @@ impl BlockView {
             self.render();
         }
     }
+}
+
+/// Briefly turn a copy button into a checkmark so the copy is confirmed
+/// without a toast stealing attention from the conversation.
+fn confirm_copied(button: &gtk::Button) {
+    let tooltip = button.tooltip_text();
+    button.set_icon_name("object-select-symbolic");
+    button.add_css_class("lc-copied");
+    button.set_tooltip_text(Some("Copied"));
+    let button = button.clone();
+    glib::timeout_add_seconds_local(2, move || {
+        button.set_icon_name("edit-copy-symbolic");
+        button.remove_css_class("lc-copied");
+        button.set_tooltip_text(tooltip.as_deref());
+        glib::ControlFlow::Break
+    });
 }
 
 /// Full markdown renderer — prose AND code blocks inline. Used for plan cards.
@@ -324,16 +343,21 @@ pub fn user_bubble(text: &str) -> gtk::Box {
     copy_btn.add_css_class("lc-copy-btn");
     copy_btn.set_tooltip_text(Some("Copy message"));
     let text_owned = text.to_string();
-    copy_btn.connect_clicked(move |_| {
-        if let Some(display) = gtk::gdk::Display::default() {
-            display.clipboard().set_text(&text_owned);
-        }
-    });
+    {
+        let tick_btn = copy_btn.clone();
+        copy_btn.connect_clicked(move |_| {
+            if let Some(display) = gtk::gdk::Display::default() {
+                display.clipboard().set_text(&text_owned);
+            }
+            confirm_copied(&tick_btn);
+        });
+    }
     hdr.append(&copy_btn);
     bubble.append(&hdr);
 
     let label = gtk::Label::new(None);
     label.set_markup(&crate::markdown::prose_markup(text));
+    label.add_css_class("lc-body");
     label.set_xalign(1.0);
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
