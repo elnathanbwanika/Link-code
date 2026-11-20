@@ -226,13 +226,14 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
             // Ctrl+Shift+V because that is what most people reach for, and
             // Shift+Insert matches the X11 convention. Copy stays on
             // Ctrl+Shift+C so Ctrl+C still interrupts the running command.
-            if control && shift && keyval == gtk::gdk::Key::C {
+            let insert = keyval == gtk::gdk::Key::Insert;
+            if (control && shift && keyval == gtk::gdk::Key::C) || (control && insert) {
                 view.emit_copy_clipboard();
                 return glib::Propagation::Stop;
             }
             let paste_shortcut = (control
                 && (keyval == gtk::gdk::Key::V || keyval == gtk::gdk::Key::v))
-                || (shift && keyval == gtk::gdk::Key::Insert);
+                || (shift && !control && insert);
             if paste_shortcut {
                 paste_from_clipboard(&view, &terminal);
                 return glib::Propagation::Stop;
@@ -249,17 +250,114 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
         terminal_output.add_controller(key);
     }
 
-    // Middle-click paste, as in most Linux terminals.
+    // Middle-click paste, as in most Linux terminals. Bound on press so the
+    // gesture is claimed before GTK's own handlers can consume it, and the
+    // clipboard text is typed into the shell rather than the read-only
+    // buffer.
     {
         let view = terminal_output.clone();
         let terminal = terminal.clone();
         let click = gtk::GestureClick::new();
         click.set_button(gtk::gdk::BUTTON_MIDDLE);
-        click.connect_released(move |_, _, _, _| {
+        click.connect_pressed(move |_, _, _, _| {
             view.grab_focus();
             paste_from_clipboard(&view, &terminal);
         });
         terminal_output.add_controller(click);
+    }
+
+    // Right-click menu: the discoverable way to paste, plus copy/select/clear.
+    {
+        let view = terminal_output.clone();
+        let terminal = terminal.clone();
+        let popover = gtk::Popover::new();
+        popover.add_css_class("lc-popover");
+        popover.set_parent(&terminal_output);
+        let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let copy_item = gtk::Button::with_label("Copy");
+        let paste_item = gtk::Button::with_label("Paste");
+        let select_item = gtk::Button::with_label("Select All");
+        let clear_item = gtk::Button::with_label("Clear");
+        for item in [&copy_item, &paste_item, &select_item, &clear_item] {
+            item.set_halign(gtk::Align::Fill);
+            menu.append(item);
+        }
+        popover.set_child(Some(&menu));
+
+        {
+            let view = view.clone();
+            let popover = popover.clone();
+            copy_item.connect_clicked(move |_| {
+                view.emit_copy_clipboard();
+                popover.popdown();
+            });
+        }
+        {
+            let view = view.clone();
+            let terminal = terminal.clone();
+            let popover = popover.clone();
+            paste_item.connect_clicked(move |_| {
+                view.grab_focus();
+                paste_from_clipboard(&view, &terminal);
+                popover.popdown();
+            });
+        }
+        {
+            let view = view.clone();
+            let popover = popover.clone();
+            select_item.connect_clicked(move |_| {
+                let buffer = view.buffer();
+                buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
+                popover.popdown();
+            });
+        }
+        {
+            let terminal = terminal.clone();
+            let popover = popover.clone();
+            clear_item.connect_clicked(move |_| {
+                let running = terminal.borrow().session.is_some();
+                if running {
+                    terminal.borrow_mut().send(b"clear\n");
+                } else {
+                    let terminal = terminal.borrow();
+                    terminal.view.reset(terminal.rows, terminal.cols);
+                }
+                popover.popdown();
+            });
+        }
+
+        // GtkTextView opens its own Cut/Copy/Paste menu on secondary click.
+        // That menu edits the read-only buffer and cannot drive the PTY, so
+        // dismiss it as soon as it appears and show the terminal menu
+        // instead. GTK's own click gesture stays in place because it also
+        // implements drag and word selection.
+        let right = gtk::GestureClick::new();
+        right.set_button(gtk::gdk::BUTTON_SECONDARY);
+        let popover_for_menu = popover.clone();
+        let view_for_menu = view.clone();
+        right.connect_pressed(move |_, _, x, y| {
+            let popover = popover_for_menu.clone();
+            let view = view_for_menu.clone();
+            glib::idle_add_local_once(move || {
+                let mut child = view.first_child();
+                while let Some(widget) = child {
+                    let next = widget.next_sibling();
+                    if widget != popover.clone().upcast::<gtk::Widget>() {
+                        if let Ok(other) = widget.downcast::<gtk::Popover>() {
+                            if other.is_visible() {
+                                other.popdown();
+                            }
+                        }
+                    }
+                    child = next;
+                }
+                popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+                    x as i32, y as i32, 1, 1,
+                )));
+                popover.popup();
+            });
+        });
+        terminal_output.add_controller(right);
     }
 
     // Drain the reader thread on the GTK thread. A channel is used because
@@ -420,6 +518,10 @@ struct TerminalView {
     buffer: gtk::TextBuffer,
     parser: RefCell<vt100::Parser>,
     cursor_tag: gtk::TextTag,
+    /// Salmon tag used for the working directory inside the shell prompt.
+    directory_tag: gtk::TextTag,
+    /// Paths to highlight, longest first (full path before `~/...`).
+    directories: RefCell<Vec<String>>,
     /// Measured for the PTY size instead of the text view, whose width grows
     /// with its content when wrapping is disabled.
     viewport: gtk::ScrolledWindow,
@@ -436,13 +538,42 @@ impl TerminalView {
             .expect("cursor tag");
         cursor_tag.set_property("background", "#2f6fed");
         cursor_tag.set_property("foreground", "#ffffff");
+        let directory_tag = buffer
+            .create_tag(Some("terminal-directory"), &[])
+            .expect("directory tag");
+        directory_tag.set_property("foreground", "#e8927c");
         Rc::new(Self {
             view,
             buffer,
             parser: RefCell::new(vt100::Parser::new(24, 80, 2000)),
             cursor_tag,
+            directory_tag,
+            directories: RefCell::new(Vec::new()),
             viewport,
         })
+    }
+
+    /// Remember the shell's starting directory so its prompt path can be
+    /// painted in the accent color. The renderer ignores ANSI colors, so the
+    /// path is highlighted by the application instead.
+    fn set_directory(&self, cwd: &Path) {
+        let mut paths = vec![cwd.display().to_string()];
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = Path::new(&home);
+            if let Ok(rest) = cwd.strip_prefix(home) {
+                if rest.as_os_str().is_empty() {
+                    paths.push("~".to_string());
+                } else {
+                    paths.push(format!("~/{}", rest.display()));
+                }
+            }
+        }
+        paths.retain(|path| !path.is_empty());
+        // Longest first: when the full path is present, tag it instead of the
+        // shorter `~/...` form.
+        paths.sort_by_key(|path| std::cmp::Reverse(path.len()));
+        paths.dedup();
+        *self.directories.borrow_mut() = paths;
     }
 
     fn reset(&self, rows: u16, cols: u16) {
@@ -514,6 +645,8 @@ impl TerminalView {
             }
         }
         self.buffer.set_text(&text);
+        self.highlight_directories();
+        self.highlight_prompt_paths(cursor_row as i32);
         if let Some(mut start) = self.buffer.iter_at_line(cursor_row as i32) {
             start.set_line_offset(cursor_col as i32);
             let mut end = start;
@@ -527,6 +660,70 @@ impl TerminalView {
             // (the PTY width is kept in sync with the viewport above).
             if let Some(adjustment) = self.view.hadjustment() {
                 adjustment.set_value(0.0);
+            }
+        }
+    }
+
+    /// Paint absolute paths on the prompt line in the accent color. This
+    /// keeps the directory highlighted after a `cd`, where the shell redraws
+    /// its prompt with a path the app has not seen before.
+    fn highlight_prompt_paths(&self, row: i32) {
+        let Some(line_start) = self.buffer.iter_at_line(row) else {
+            return;
+        };
+        let mut line_end = line_start;
+        line_end.forward_to_line_end();
+        let text = self
+            .buffer
+            .text(&line_start, &line_end, false)
+            .to_string();
+        let text = text.as_str();
+        let line_offset = line_start.offset();
+        let mut search_from = 0;
+        for token in text.split_whitespace() {
+            let Some(found) = text[search_from..].find(token) else {
+                continue;
+            };
+            let byte_start = search_from + found;
+            search_from = byte_start + token.len();
+            let trimmed = token.trim_matches(|c: char| {
+                matches!(
+                    c,
+                    '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '"' | '\''
+                )
+            });
+            if !(trimmed.starts_with('/') || trimmed.starts_with("~/")) {
+                continue;
+            }
+            let lead = token.len() - token.trim_start_matches(|c: char| {
+                matches!(c, '(' | '[' | '{' | '"' | '\'')
+            }).len();
+            let byte_start = byte_start + lead;
+            let char_start = text[..byte_start].chars().count();
+            let char_len = trimmed.chars().count();
+            if char_len == 0 {
+                continue;
+            }
+            let start = self.buffer.iter_at_offset(line_offset + char_start as i32);
+            let mut end = start;
+            end.forward_chars(char_len as i32);
+            self.buffer.apply_tag(&self.directory_tag, &start, &end);
+        }
+    }
+
+    /// Paint known working-directory paths in the accent color wherever they
+    /// appear on screen, notably the shell prompt.
+    fn highlight_directories(&self) {
+        let directories = self.directories.borrow().clone();
+        for path in directories {
+            let mut cursor = self.buffer.start_iter();
+            while let Some((start, end)) = cursor.forward_search(
+                &path,
+                gtk::TextSearchFlags::TEXT_ONLY,
+                None,
+            ) {
+                self.buffer.apply_tag(&self.directory_tag, &start, &end);
+                cursor = end;
             }
         }
     }
@@ -558,6 +755,7 @@ impl TerminalState {
     fn start(&mut self, cwd: &Path, shell: &str) {
         self.session = None;
         self.incoming = None;
+        self.view.set_directory(cwd);
         self.view.reset(self.rows, self.cols);
         let size = portable_pty::PtySize {
             rows: self.rows,
