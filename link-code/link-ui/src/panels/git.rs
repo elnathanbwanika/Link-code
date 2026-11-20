@@ -1,4 +1,8 @@
-//! The Git tab: GitHub account, repository list, local changes and commit.
+//! The Git dialog: GitHub account, repository list, local changes and commit.
+//!
+//! Opened as its own modal window from the sidebar's Git pill. Network and
+//! `git` work run on the tokio runtime; widgets always update on the GTK
+//! thread.
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -249,6 +253,51 @@ pub fn build(state: &Rc<UiState>) -> Rc<GitPanel> {
     });
     wire(&panel, state);
     panel
+}
+
+/// Open the Git panel in its own modal window.
+///
+/// The panel owns all of its state, so a fresh one is built for each visit and
+/// always reflects the current workspace. Escape closes the dialog.
+pub fn present(state: &Rc<UiState>) {
+    let window = gtk::Window::builder()
+        .title("Git")
+        .modal(true)
+        .resizable(true)
+        .default_width(940)
+        .default_height(600)
+        .build();
+    window.add_css_class("lc-dialog");
+    window.add_css_class("lc-git-window");
+    if let Some(parent) = state.widgets().map(|widgets| widgets.window.clone()) {
+        window.set_transient_for(Some(&parent));
+    }
+
+    let header = gtk::HeaderBar::new();
+    let title = gtk::Label::new(Some("Git"));
+    title.add_css_class("title");
+    header.set_title_widget(Some(&title));
+    window.set_titlebar(Some(&header));
+
+    {
+        let dialog = window.clone();
+        let key = gtk::EventControllerKey::new();
+        key.set_propagation_phase(gtk::PropagationPhase::Capture);
+        key.connect_key_pressed(move |_, keyval, _, _| {
+            if keyval == gtk::gdk::Key::Escape {
+                dialog.close();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        window.add_controller(key);
+    }
+
+    let panel = build(state);
+    panel.refresh(state);
+    window.set_child(Some(&panel.root));
+    window.present();
 }
 
 fn wire(panel: &Rc<GitPanel>, state: &Rc<UiState>) {
@@ -820,9 +869,8 @@ fn start_clone(panel: &Rc<GitPanel>, state: &Rc<UiState>, repo: GitHubRepo, dest
                 panel.set_detail(None);
                 state.toast(&format!("Cloned {full_name}"));
                 crate::window::open_workspace(&state, &destination);
-                if let Some(widgets) = state.widgets() {
-                    widgets.bottom.git.refresh(&state);
-                }
+                // The dialog stays open on top; show the new repository's state.
+                panel.refresh(&state);
             }
             Err(error) => {
                 panel.set_detail(Some(&error));

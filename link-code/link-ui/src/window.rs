@@ -518,7 +518,6 @@ impl LinkWindow {
         if let Some(widgets) = state.widgets() {
             panels::sidebar::refresh_files(&state, &widgets.sidebar);
             panels::sidebar::refresh_history(&state, &widgets.sidebar);
-            widgets.bottom.git.refresh(&state);
         }
         // Reopen the conversation that was open last time, with its checklist
         // and stopping point, so the agent continues instead of restarting.
@@ -741,7 +740,6 @@ pub fn open_workspace(state: &Rc<UiState>, path: &Path) {
         panels::sidebar::refresh_files(state, &widgets.sidebar);
         panels::sidebar::refresh_history(state, &widgets.sidebar);
         widgets.bottom.restart(state);
-        widgets.bottom.git.refresh(state);
     }
     // Reopen the newest conversation in this folder, if there is one.
     panels::sidebar::resume_last(state);

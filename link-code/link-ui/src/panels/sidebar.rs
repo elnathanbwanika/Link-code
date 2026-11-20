@@ -255,10 +255,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
                 state.toast("Open a folder first (Ctrl+O)");
                 return;
             }
-            if let Some(widgets) = state.widgets() {
-                widgets.bottom_root.set_visible(true);
-                widgets.bottom.show_git(&state);
-            }
+            crate::panels::git::present(&state);
         });
     }
     {

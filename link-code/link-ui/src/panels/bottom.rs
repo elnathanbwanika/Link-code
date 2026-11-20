@@ -22,7 +22,6 @@ pub struct BottomPanel {
     pub terminal_output: gtk::TextView,
     pub output_view: gtk::TextView,
     pub problems_box: gtk::Box,
-    pub git: Rc<crate::panels::git::GitPanel>,
     output_buffer: gtk::TextBuffer,
     terminal: Rc<RefCell<TerminalState>>,
 }
@@ -197,10 +196,6 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
     problems_scroll.add_css_class("lc-bg");
     notebook.append_page(&problems_scroll, Some(&tab_label("Problems")));
 
-    // ---- git ------------------------------------------------------------
-    let git = crate::panels::git::build(state);
-    notebook.append_page(&git.root, Some(&tab_label("Git")));
-
     root.append(&notebook);
 
     let panel = Rc::new(BottomPanel {
@@ -209,7 +204,6 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
         terminal_output: terminal_output.clone(),
         output_view,
         problems_box,
-        git,
         output_buffer,
         terminal: terminal.clone(),
     });
@@ -361,12 +355,6 @@ impl BottomPanel {
                 }
             }
         }
-    }
-
-    /// Show the Git tab, refreshed against the current workspace.
-    pub fn show_git(&self, state: &Rc<UiState>) {
-        self.git.refresh(state);
-        self.show("Git");
     }
 
     pub fn terminal(&self) -> &gtk::TextView {

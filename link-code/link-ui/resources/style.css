@@ -1183,18 +1183,18 @@ switch slider { background-color: @lc_text; border-radius: 999px; }
 .lc-git-clone-row { padding-top: 4px; }
 .lc-git-commit-row { padding-top: 2px; }
 
-/* Compact controls: the tab lives inside a short bottom panel. */
+/* Compact controls for the standalone Git dialog. */
 .lc-git entry.lc-input, .lc-git searchentry.lc-filter {
-  min-height: 26px;
-  padding: 2px 8px;
-  border-radius: 9px;
+  min-height: 30px;
+  padding: 3px 10px;
+  border-radius: 10px;
 }
-.lc-git searchentry.lc-filter { font-size: 10px; }
+.lc-git searchentry.lc-filter { font-size: 10.5px; }
 .lc-git passwordentry {
   background-color: @lc_surface2;
   border: 1px solid @lc_border;
-  border-radius: 9px;
-  min-height: 26px;
+  border-radius: 10px;
+  min-height: 30px;
   color: @lc_text;
 }
 .lc-git passwordentry:focus-within {
@@ -1205,16 +1205,16 @@ switch slider { background-color: @lc_text; border-radius: 999px; }
 .lc-git passwordentry text { background: transparent; }
 button.lc-git-connect,
 .lc-git button.lc-primary {
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font-size: 11px;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 11.5px;
 }
 .lc-git button.lc-accent-outline {
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 10px;
-  font-size: 10.5px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 11px;
 }
 
 /* Repository rows */
