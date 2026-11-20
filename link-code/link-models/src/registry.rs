@@ -227,6 +227,9 @@ impl Default for ApiKeyEntry {
     }
 }
 
+/// Upper bound on how many keys a single base URL may hold.
+pub const MAX_KEYS_PER_POOL: usize = 100;
+
 /// Every API key that belongs to one base URL.
 ///
 /// Keys are scoped to the URL rather than to a model configuration: two models
@@ -246,6 +249,25 @@ impl ApiKeyPool {
 
     pub fn len(&self) -> usize {
         self.keys.len()
+    }
+
+    /// True when no more keys may be added to this base URL.
+    pub fn is_full(&self) -> bool {
+        self.keys.len() >= MAX_KEYS_PER_POOL
+    }
+
+    /// True when at least one key would actually be sent: it has an id.
+    pub fn has_usable_key(&self) -> bool {
+        self.keys.iter().any(|key| !key.id.is_empty())
+    }
+
+    /// Append a key, refusing to grow past [`MAX_KEYS_PER_POOL`].
+    pub fn push(&mut self, entry: ApiKeyEntry) -> bool {
+        if self.is_full() {
+            return false;
+        }
+        self.keys.push(entry);
+        true
     }
 
     /// Index of the key requests should use: the active one when it is still

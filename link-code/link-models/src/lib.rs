@@ -32,6 +32,7 @@ pub use provider::{ModelProvider, ModelStream, ProviderFactory};
 pub use proxy::{ProxyProtocol, ProxySettings};
 pub use registry::{
     ApiKeyEntry, ApiKeyPool, ModelConfig, ModelRegistry, ModelRole, ModelStats, ProviderKind,
+    MAX_KEYS_PER_POOL,
 };
 pub use types::{
     Capabilities, ChatMessage, ChatRequest, FinishReason, ImageAttachment, ModelInfo, Role,

@@ -6,7 +6,7 @@
 //! back to this state through `glib::MainContext::spawn_local`.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
@@ -17,7 +17,10 @@ use link_core::config::{config_dir, Config, ConfigStore};
 use link_core::permission::PermissionMode;
 use link_core::secrets::{self, SecretStore};
 use link_core::session::{Session, SessionStore};
-use link_models::registry::{ModelConfig, ModelRegistry, ModelRole, ProviderKind};
+use link_models::registry::{ApiKeyPool, ModelConfig, ModelRegistry, ModelRole, ProviderKind};
+use link_models::{
+    KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, ModelProvider, RotatingProvider,
+};
 use uuid::Uuid;
 
 use crate::widgets::chat_message::BlockView;
@@ -218,7 +221,29 @@ impl UiState {
         // Every provider, discovery probe and web tool reads this global when
         // it builds its HTTP client, so install the saved proxy up front.
         link_models::proxy::set(config.proxy.clone());
-        let registry = load_registry();
+        let mut registry = load_registry();
+        // Fold any single keys written by older builds into per-base-URL pools.
+        let mut registry_dirty =
+            link_core::secrets::migrate_model_keys(&mut registry, secrets.as_ref());
+        // Keep `has_api_key` in sync with the actual secret store and pools, not
+        // just whatever was last written to models.json.
+        {
+            let keyed_pools: std::collections::HashSet<String> = registry
+                .key_pools
+                .iter()
+                .filter(|(_, pool)| pool.has_usable_key())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for model in &mut registry.models {
+                let pool_id = model.key_pool_id();
+                let has = (!pool_id.is_empty() && keyed_pools.contains(&pool_id))
+                    || secrets.get_model_key(&model.id).is_some();
+                if model.has_api_key != has {
+                    model.has_api_key = has;
+                    registry_dirty = true;
+                }
+            }
+        }
         let state = Rc::new(Self {
             config_store,
             config: RefCell::new(config),
@@ -244,12 +269,10 @@ impl UiState {
             turn_thinking: RefCell::new(String::new()),
             turn_model: RefCell::new(String::new()),
         });
-        // Keep `has_api_key` in sync with the actual secret store, not just
-        // whatever was last written to models.json.
-        {
-            let mut registry = state.registry.borrow_mut();
-            for model in &mut registry.models {
-                model.has_api_key = state.secrets.get_model_key(&model.id).is_some();
+        if registry_dirty {
+            let registry = state.registry.borrow().clone();
+            if let Err(error) = save_registry(&registry) {
+                tracing::warn!(%error, "could not persist the migrated API-key pools");
             }
         }
         state
@@ -350,11 +373,239 @@ impl UiState {
         self.refresh_model_badges();
     }
 
-    pub fn api_key_for(&self, model: &ModelConfig) -> Option<String> {
+    // ---- API-key pools --------------------------------------------------
+    //
+    // A pool belongs to a normalised base URL. Every model pointed at the same
+    // URL shares it, so one key applies to all of them. Key metadata (ids,
+    // labels, which key is active or exhausted) lives in `models.json`; the key
+    // material itself stays in the secret store.
+
+    /// Pool metadata behind one base URL. Empty when nothing is stored yet.
+    pub fn key_pool_snapshot(&self, pool_id: &str) -> ApiKeyPool {
+        if pool_id.is_empty() {
+            return ApiKeyPool::default();
+        }
+        self.registry
+            .borrow()
+            .key_pools
+            .get(pool_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Pool metadata for the endpoint a model points at.
+    pub fn model_key_pool(&self, model: &ModelConfig) -> ApiKeyPool {
+        self.key_pool_snapshot(&model.key_pool_id())
+    }
+
+    /// The live pool (metadata + secret material) used to rotate keys during a
+    /// turn. Falls back to a legacy single key when the migration has not run.
+    pub fn build_key_pool(&self, model: &ModelConfig) -> KeyPool {
+        let pool_id = model.key_pool_id();
+        if pool_id.is_empty() {
+            return KeyPool::default();
+        }
+        let metadata = self.key_pool_snapshot(&pool_id);
+        let mut slots: Vec<KeySlot> = metadata
+            .keys
+            .iter()
+            .filter_map(|entry| {
+                let raw = self.secrets.get_pool_key(&pool_id, &entry.id)?;
+                let key = link_models::sanitize_api_key(&raw);
+                if key.is_empty() {
+                    return None;
+                }
+                Some(KeySlot {
+                    id: entry.id.clone(),
+                    label: entry.label.clone(),
+                    key,
+                    exhausted: entry.exhausted,
+                    exhausted_at: entry.exhausted_at,
+                })
+            })
+            .collect();
+        if slots.is_empty() {
+            if let Some(raw) = self.secrets.get_model_key(&model.id) {
+                let key = link_models::sanitize_api_key(&raw);
+                if !key.is_empty() {
+                    slots.push(KeySlot {
+                        id: "legacy".to_string(),
+                        label: "Default".to_string(),
+                        key,
+                        exhausted: false,
+                        exhausted_at: None,
+                    });
+                }
+            }
+        }
+        KeyPool::new(pool_id, metadata.active, slots)
+    }
+
+    /// Store one key for a base URL, verifying it can be read back.
+    pub fn store_pool_key(&self, pool_id: &str, key_id: &str, secret: &str) -> Result<(), String> {
+        let secret = link_models::sanitize_api_key(secret);
         self.secrets
-            .get_model_key(&model.id)
-            .map(|key| link_models::sanitize_api_key(&key))
-            .filter(|key| !key.is_empty())
+            .set_pool_key(pool_id, key_id, &secret)
+            .map_err(|error| format!("could not store the API key: {error}"))?;
+        match self.secrets.get_pool_key(pool_id, key_id) {
+            Some(stored) if link_models::sanitize_api_key(&stored) == secret => Ok(()),
+            _ => Err("the API key could not be read back after saving".to_string()),
+        }
+    }
+
+    /// Forget one key's secret.
+    pub fn delete_pool_key(&self, pool_id: &str, key_id: &str) {
+        let _ = self.secrets.delete_pool_key(pool_id, key_id);
+    }
+
+    /// Replace the metadata for one base URL and persist the registry.
+    pub fn set_key_pool(&self, pool_id: &str, pool: ApiKeyPool) {
+        if pool_id.is_empty() {
+            return;
+        }
+        {
+            let mut registry = self.registry.borrow_mut();
+            if pool.keys.is_empty() {
+                registry.key_pools.remove(pool_id);
+            } else {
+                registry.key_pools.insert(pool_id.to_string(), pool);
+            }
+        }
+        let registry = self.registry.borrow().clone();
+        let _ = save_registry(&registry);
+        self.refresh_has_api_key();
+    }
+
+    /// Drop a base URL's pool metadata and every one of its stored secrets.
+    pub fn delete_key_pool(&self, pool_id: &str) {
+        if pool_id.is_empty() {
+            return;
+        }
+        let pool = self.key_pool_snapshot(pool_id);
+        for entry in &pool.keys {
+            let _ = self.secrets.delete_pool_key(pool_id, &entry.id);
+        }
+        {
+            let mut registry = self.registry.borrow_mut();
+            registry.key_pools.remove(pool_id);
+        }
+        let registry = self.registry.borrow().clone();
+        let _ = save_registry(&registry);
+        self.refresh_has_api_key();
+    }
+
+    /// Recompute `has_api_key` for every model from the pools and the legacy
+    /// per-model secrets. Persists the registry when the flag changes.
+    pub fn refresh_has_api_key(&self) {
+        let keyed_pools: HashSet<String> = {
+            let registry = self.registry.borrow();
+            registry
+                .key_pools
+                .iter()
+                .filter(|(_, pool)| pool.has_usable_key())
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let mut changed = false;
+        {
+            let mut registry = self.registry.borrow_mut();
+            for model in &mut registry.models {
+                let pool_id = model.key_pool_id();
+                let has = (!pool_id.is_empty() && keyed_pools.contains(&pool_id))
+                    || self.secrets.get_model_key(&model.id).is_some();
+                if model.has_api_key != has {
+                    model.has_api_key = has;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            let registry = self.registry.borrow().clone();
+            let _ = save_registry(&registry);
+        }
+    }
+
+    /// Persist a rotation change coming back from a running turn and, when the
+    /// active key moved, tell the user which one ran out.
+    pub fn apply_key_pool_update(&self, update: KeyPoolUpdate) {
+        let switched = update.switched;
+        let recovered = update.recovered;
+        let exhausted_label = update.exhausted_label.clone();
+        {
+            let mut registry = self.registry.borrow_mut();
+            if update.pool.keys.is_empty() {
+                registry.key_pools.remove(&update.pool_id);
+            } else {
+                registry.key_pools.insert(update.pool_id.clone(), update.pool);
+            }
+        }
+        let registry = self.registry.borrow().clone();
+        let _ = save_registry(&registry);
+        self.refresh_has_api_key();
+        if switched {
+            match exhausted_label {
+                Some(label) => {
+                    self.toast(&format!("{label} ran out \u{2014} switched to the next API key"))
+                }
+                None => self.toast("Switched to the next API key"),
+            }
+        } else if recovered {
+            self.toast("An API key is available again");
+        }
+    }
+
+    /// A provider that rotates through every key stored for this endpoint and
+    /// reports changes back to the UI thread. Used by the agent turn.
+    pub fn rotating_provider(self: &Rc<Self>, model: &ModelConfig) -> Arc<dyn ModelProvider> {
+        let pool = self.build_key_pool(model);
+        let observer = self.key_pool_observer();
+        Arc::new(RotatingProvider::new(model.clone(), pool, observer))
+    }
+
+    /// A one-shot rotating provider built from typed keys, for "Load models"
+    /// and "Test" before the form is saved. Changes are not persisted.
+    pub fn ephemeral_provider(
+        &self,
+        model: &ModelConfig,
+        keys: Vec<(String, String)>,
+    ) -> Arc<dyn ModelProvider> {
+        let slots: Vec<KeySlot> = keys
+            .into_iter()
+            .filter_map(|(label, secret)| {
+                let key = link_models::sanitize_api_key(&secret);
+                if key.is_empty() {
+                    None
+                } else {
+                    Some((label, key))
+                }
+            })
+            .enumerate()
+            .map(|(index, (label, key))| KeySlot {
+                id: format!("ephemeral-{index}"),
+                label,
+                key,
+                exhausted: false,
+                exhausted_at: None,
+            })
+            .collect();
+        let pool = KeyPool::new(model.key_pool_id(), 0, slots);
+        Arc::new(RotatingProvider::new(model.clone(), pool, None))
+    }
+
+    /// Build an observer that forwards pool changes to the GTK thread. GTK
+    /// state is not `Send`, so updates cross the thread boundary through a
+    /// channel and are applied by a local task.
+    fn key_pool_observer(self: &Rc<Self>) -> Option<KeyPoolObserver> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<KeyPoolUpdate>();
+        let state = self.clone();
+        gtk::glib::MainContext::default().spawn_local(async move {
+            while let Some(update) = rx.recv().await {
+                state.apply_key_pool_update(update);
+            }
+        });
+        Some(Arc::new(move |update| {
+            let _ = tx.send(update);
+        }))
     }
 
     pub fn refresh_model_badges(&self) {

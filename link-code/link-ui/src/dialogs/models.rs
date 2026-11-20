@@ -2,8 +2,9 @@
 //!
 //! The list shows one card per configured endpoint with its provider tile,
 //! status badge and current chat role. The `+` opens a separate form built
-//! from surface cards: provider type, name, API key, model and an advanced
-//! section. Keys are written to the OS keyring and never logged.
+//! from surface cards: provider type, name, API keys, model and an advanced
+//! section. Multiple keys can be stored per base URL; they are written to the
+//! OS keyring and never logged.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -12,9 +13,9 @@ use std::time::Duration;
 use gtk::glib;
 use gtk::prelude::*;
 
-use link_models::provider::provider_for;
 use link_models::registry::{
-    normalize_base_url, ModelConfig, ModelRegistry, ModelRole, ProviderKind,
+    normalize_base_url, ApiKeyEntry, ApiKeyPool, ModelConfig, ModelRegistry, ModelRole,
+    ProviderKind, MAX_KEYS_PER_POOL,
 };
 use link_models::sanitize_api_key;
 
@@ -337,6 +338,18 @@ fn provider_card(
                 registry.remove(&model.id);
             }
             let _ = state.secrets.delete_model_key(&model.id);
+            // A base URL shared with another model keeps its keys; otherwise the
+            // pool and every secret in it go away with the provider.
+            let pool_id = model.key_pool_id();
+            let still_used = state
+                .registry
+                .borrow()
+                .models
+                .iter()
+                .any(|other| other.key_pool_id() == pool_id);
+            if !pool_id.is_empty() && !still_used {
+                state.delete_key_pool(&pool_id);
+            }
             let registry = state.registry.borrow().clone();
             let _ = save_registry(&registry);
             state.refresh_model_badges();
@@ -374,11 +387,9 @@ fn provider_card(
 }
 
 fn test_endpoint(state: &Rc<UiState>, model: &ModelConfig) {
-    let config = model.clone();
-    let key = state.api_key_for(model);
+    let provider = state.rotating_provider(model);
     let (tx, rx) = tokio::sync::oneshot::channel();
     runtime().spawn(async move {
-        let provider = provider_for(&config, key);
         let result = provider.test_connection().await;
         let _ = tx.send(result);
     });
@@ -434,6 +445,17 @@ struct EditorCtx {
     editing: RefCell<Option<String>>,
 }
 
+/// One editable API-key row in the provider form.
+#[derive(Clone)]
+struct KeyRow {
+    /// Unique per UI row, so removal can find it again.
+    token: u64,
+    /// Existing pool key id, or empty for a row the user just added.
+    pool_id: String,
+    entry: gtk::Entry,
+    row: gtk::Box,
+}
+
 #[derive(Clone)]
 struct Form {
     root: gtk::Box,
@@ -441,8 +463,13 @@ struct Form {
     base_url: gtk::Entry,
     model_id: gtk::Entry,
     load_models: gtk::Button,
-    api_key: gtk::Entry,
+    keys_box: gtk::Box,
+    keys: Rc<RefCell<Vec<KeyRow>>>,
+    key_counter: Rc<Cell<u64>>,
+    add_key: gtk::Button,
+    key_hint: gtk::Label,
     key_link: gtk::Button,
+    on_keys_changed: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     context: gtk::SpinButton,
     max_output: gtk::SpinButton,
     temperature: gtk::SpinButton,
@@ -537,60 +564,42 @@ impl Form {
         url_card.append(&url_hint);
 
         // ---- API key ---------------------------------------------------
-        let key_card = form_card("API KEY", &root);
+        let key_card = form_card("API KEYS", &root);
         let key_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         key_head.set_hexpand(true);
-        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        key_head.append(&spacer);
+        let key_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        key_spacer.set_hexpand(true);
+        key_head.append(&key_spacer);
         let key_link = gtk::Button::with_label("Get API key");
         key_link.add_css_class("lc-link");
         key_link.set_has_frame(false);
         key_head.append(&key_link);
         key_card.append(&key_head);
 
-        let key_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let api_key = entry("sk-…");
-        api_key.set_visibility(false);
-        api_key.set_input_purpose(gtk::InputPurpose::Password);
-        api_key.set_hexpand(true);
-        key_row.append(&api_key);
-        let paste = gtk::Button::from_icon_name("edit-paste-symbolic");
-        paste.add_css_class("lc-icon-btn");
-        paste.add_css_class("flat");
-        paste.set_tooltip_text(Some("Paste from clipboard"));
-        {
-            let api_key = api_key.clone();
-            paste.connect_clicked(move |_| paste_into(&api_key));
-        }
-        key_row.append(&paste);
-        let eye = gtk::Button::from_icon_name("view-reveal-symbolic");
-        eye.add_css_class("lc-icon-btn");
-        eye.add_css_class("flat");
-        eye.set_tooltip_text(Some("Show or hide the key"));
-        {
-            let api_key = api_key.clone();
-            let shown = Rc::new(Cell::new(false));
-            eye.connect_clicked(move |button| {
-                let visible = !shown.get();
-                shown.set(visible);
-                api_key.set_visibility(visible);
-                button.set_icon_name(if visible {
-                    "view-conceal-symbolic"
-                } else {
-                    "view-reveal-symbolic"
-                });
-            });
-        }
-        key_row.append(&eye);
-        key_card.append(&key_row);
-        let key_hint = gtk::Label::new(Some(
-            "Stored in the OS keyring, with a mode-0600 fallback. Never written to logs.",
-        ));
+        let keys_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        key_card.append(&keys_box);
+
+        let key_foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let add_key = gtk::Button::with_label("Add key");
+        add_key.add_css_class("lc-accent-outline");
+        add_key.set_tooltip_text(Some("Add another API key for this base URL"));
+        key_foot.append(&add_key);
+        let key_hint = gtk::Label::new(None);
         key_hint.add_css_class("lc-form-hint");
         key_hint.set_xalign(0.0);
+        key_hint.set_hexpand(true);
         key_hint.set_wrap(true);
-        key_card.append(&key_hint);
+        key_foot.append(&key_hint);
+        key_card.append(&key_foot);
+
+        let key_note = gtk::Label::new(Some(
+            "Add one or more keys for this base URL. When a key runs out mid-task, \
+             the next one is used automatically. Keys stay in the OS keyring.",
+        ));
+        key_note.add_css_class("lc-form-hint");
+        key_note.set_xalign(0.0);
+        key_note.set_wrap(true);
+        key_card.append(&key_note);
 
         // ---- model -----------------------------------------------------
         let model_card = form_card("MODEL", &root);
@@ -677,8 +686,13 @@ impl Form {
             base_url,
             model_id,
             load_models,
-            api_key,
+            keys_box,
+            keys: Rc::new(RefCell::new(Vec::new())),
+            key_counter: Rc::new(Cell::new(0)),
+            add_key,
+            key_hint,
             key_link,
+            on_keys_changed: Rc::new(RefCell::new(None)),
             context,
             max_output,
             temperature,
@@ -692,6 +706,19 @@ impl Form {
             fetched: Rc::new(RefCell::new(Vec::new())),
             suppress_fetch: Rc::new(Cell::new(false)),
         };
+
+        {
+            let form = form.clone();
+            form.add_key.clone().connect_clicked(move |_| {
+                if form.keys.borrow().len() >= MAX_KEYS_PER_POOL {
+                    set_key_hint(&form, &format!(
+                        "Limit reached \u{2014} at most {MAX_KEYS_PER_POOL} keys per base URL"
+                    ));
+                    return;
+                }
+                form.add_key_row(String::new(), "");
+            });
+        }
 
         // Choosing a provider applies its default URL and updates the key link.
         for (kind, button) in form.provider_buttons.iter() {
@@ -747,7 +774,7 @@ impl Form {
         form
     }
 
-    fn load(&self, model: &ModelConfig, api_key: String) {
+    fn load(&self, model: &ModelConfig, keys: &[(ApiKeyEntry, String)]) {
         self.suppress_fetch.set(true);
         *self.provider.borrow_mut() = model.provider;
         for (kind, button) in self.provider_buttons.iter() {
@@ -758,7 +785,13 @@ impl Form {
         self.display.set_text(&model.display_name);
         self.base_url.set_text(&model.base_url);
         self.model_id.set_text(&model.model_id);
-        self.api_key.set_text(&api_key);
+        self.clear_key_rows();
+        for (entry, secret) in keys {
+            self.add_key_row(entry.id.clone(), secret);
+        }
+        if keys.is_empty() {
+            self.add_key_row(String::new(), "");
+        }
         self.context.set_value(model.context_window as f64);
         self.max_output.set_value(model.max_output_tokens as f64);
         self.temperature.set_value(model.temperature.unwrap_or(0.2));
@@ -775,7 +808,7 @@ impl Form {
         let mut model = ModelConfig::default();
         model.provider = ProviderKind::OpenAiCompatible;
         model.base_url = ProviderKind::OpenAiCompatible.default_base_url().to_string();
-        self.load(&model, String::new());
+        self.load(&model, &[]);
         self.display.set_text("");
         self.model_id.set_text("");
         self.base_url.set_text("");
@@ -783,6 +816,120 @@ impl Form {
 
     fn set_fetched(&self, ids: &[String]) {
         *self.fetched.borrow_mut() = ids.to_vec();
+    }
+
+    /// Append one key row. `pool_id` ties the row to an already-stored key so
+    /// an unchanged entry keeps its secret.
+    fn add_key_row(&self, pool_id: String, secret: &str) {
+        let token = self.key_counter.get() + 1;
+        self.key_counter.set(token);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        row.add_css_class("lc-key-row");
+
+        let entry = entry("sk-...");
+        entry.set_visibility(false);
+        entry.set_input_purpose(gtk::InputPurpose::Password);
+        entry.set_hexpand(true);
+        if !secret.is_empty() {
+            entry.set_text(secret);
+        }
+        {
+            let form = self.clone();
+            entry.connect_changed(move |_| form.notify_keys_changed());
+        }
+        row.append(&entry);
+
+        let paste = gtk::Button::from_icon_name("edit-paste-symbolic");
+        paste.add_css_class("lc-icon-btn");
+        paste.add_css_class("flat");
+        paste.set_tooltip_text(Some("Paste from clipboard"));
+        {
+            let entry = entry.clone();
+            paste.connect_clicked(move |_| paste_into(&entry));
+        }
+        row.append(&paste);
+
+        let eye = gtk::Button::from_icon_name("view-reveal-symbolic");
+        eye.add_css_class("lc-icon-btn");
+        eye.add_css_class("flat");
+        eye.set_tooltip_text(Some("Show or hide the key"));
+        {
+            let entry = entry.clone();
+            let shown = Rc::new(Cell::new(false));
+            eye.connect_clicked(move |button| {
+                let visible = !shown.get();
+                shown.set(visible);
+                entry.set_visibility(visible);
+                button.set_icon_name(if visible {
+                    "view-conceal-symbolic"
+                } else {
+                    "view-reveal-symbolic"
+                });
+            });
+        }
+        row.append(&eye);
+
+        let remove = gtk::Button::from_icon_name("user-trash-symbolic");
+        remove.add_css_class("lc-icon-btn");
+        remove.add_css_class("flat");
+        remove.set_tooltip_text(Some("Remove this key"));
+        {
+            let form = self.clone();
+            let row_widget = row.clone();
+            remove.connect_clicked(move |_| {
+                form.keys.borrow_mut().retain(|item| item.token != token);
+                form.keys_box.remove(&row_widget);
+                form.refresh_key_hint();
+                form.notify_keys_changed();
+            });
+        }
+        row.append(&remove);
+
+        self.keys_box.append(&row);
+        self.keys.borrow_mut().push(KeyRow {
+            token,
+            pool_id,
+            entry,
+            row,
+        });
+        self.refresh_key_hint();
+    }
+
+    fn clear_key_rows(&self) {
+        for item in self.keys.borrow_mut().drain(..) {
+            self.keys_box.remove(&item.row);
+        }
+        self.refresh_key_hint();
+    }
+
+    /// The non-empty secrets currently in the form, in row order.
+    fn resolved_keys(&self) -> Vec<(String, String)> {
+        self.keys
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let secret = sanitize_api_key(&item.entry.text());
+                if secret.is_empty() {
+                    None
+                } else {
+                    Some((format!("Key {}", index + 1), secret))
+                }
+            })
+            .collect()
+    }
+
+    fn refresh_key_hint(&self) {
+        let count = self.keys.borrow().len();
+        set_key_hint(self, &format!("{count} of {MAX_KEYS_PER_POOL} keys"));
+        self.add_key.set_sensitive(count < MAX_KEYS_PER_POOL);
+    }
+
+    fn notify_keys_changed(&self) {
+        if let Some(callback) = self.on_keys_changed.borrow().clone() {
+            callback();
+        }
     }
 
     fn read(&self, ctx: &EditorCtx) -> ModelConfig {
@@ -818,7 +965,7 @@ impl Form {
         } else if config.id.is_empty() {
             config.id = link_models::registry::generate_id(&config.display_name, &config.model_id);
         }
-        config.has_api_key = !self.api_key.text().trim().is_empty() || config.has_api_key;
+        config.has_api_key = !self.resolved_keys().is_empty() || config.has_api_key;
         config
     }
 }
@@ -863,7 +1010,20 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
         editing: RefCell::new(None),
     });
     if let Some(model) = &editing {
-        form.load(model, state.api_key_for(model).unwrap_or_default());
+        let pool_id = model.key_pool_id();
+        let keys: Vec<(ApiKeyEntry, String)> = state
+            .model_key_pool(model)
+            .keys
+            .iter()
+            .map(|entry| {
+                let secret = state
+                    .secrets
+                    .get_pool_key(&pool_id, &entry.id)
+                    .unwrap_or_default();
+                (entry.clone(), secret)
+            })
+            .collect();
+        form.load(model, &keys);
         *ctx.editing.borrow_mut() = Some(model.id.clone());
     } else {
         form.clear();
@@ -922,16 +1082,11 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
                 set_status(&status, "Set a base URL first", false);
                 return;
             }
-            let typed = sanitize_api_key(&form.api_key.text());
-            let key = if typed.is_empty() {
-                state.api_key_for(&config)
-            } else {
-                Some(typed)
-            };
+            let keys = form.resolved_keys();
             set_status(&status, "Loading models…", true);
+            let provider = state.ephemeral_provider(&config, keys);
             let (tx, rx) = tokio::sync::oneshot::channel();
             runtime().spawn(async move {
-                let provider = provider_for(&config, key);
                 let result = provider.list_models().await;
                 let _ = tx.send(result);
             });
@@ -1003,7 +1158,7 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
             let schedule = schedule.clone();
             form.base_url.connect_changed(move |_| schedule());
         }
-        form.api_key.connect_changed(move |_| schedule());
+        *form.on_keys_changed.borrow_mut() = Some(schedule);
     }
 
     // ---- save ---------------------------------------------------------
@@ -1020,23 +1175,35 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
                 set_status(&status, &problems.join(" · "), false);
                 return;
             }
-            let key = sanitize_api_key(&form.api_key.text());
-            let was_editing = ctx.editing.borrow().clone();
+            let old_pool_id = form
+                .original
+                .borrow()
+                .as_ref()
+                .map(|model| model.key_pool_id())
+                .unwrap_or_default();
+            let new_pool_id = config.key_pool_id();
+
             let model_id = state.registry.borrow_mut().add(config.clone());
-            let mut has_key = false;
-            let mut key_problem = None;
-            if !key.is_empty() {
-                match store_key(&state, &model_id, &key) {
-                    Ok(()) => has_key = true,
-                    Err(error) => key_problem = Some(error),
+            *ctx.editing.borrow_mut() = Some(model_id.clone());
+            // Older builds kept one key per model `id`; pools supersede it.
+            let _ = state.secrets.delete_model_key(&model_id);
+
+            let key_problem =
+                sync_key_pool(&state, &form, &new_pool_id, old_pool_id == new_pool_id).err();
+
+            // A base URL that no model points at any more keeps no keys behind.
+            if !old_pool_id.is_empty() && old_pool_id != new_pool_id {
+                let still_used = state
+                    .registry
+                    .borrow()
+                    .models
+                    .iter()
+                    .any(|model| model.key_pool_id() == old_pool_id);
+                if !still_used {
+                    state.delete_key_pool(&old_pool_id);
                 }
-            } else if was_editing.as_deref() == Some(model_id.as_str()) {
-                let _ = state.secrets.delete_model_key(&model_id);
             }
-            if let Some(model) = state.registry.borrow_mut().get_mut(&model_id) {
-                model.has_api_key = has_key;
-            }
-            *ctx.editing.borrow_mut() = Some(model_id);
+            state.refresh_has_api_key();
             let registry = state.registry.borrow().clone();
             let _ = save_registry(&registry);
             state.refresh_model_badges();
@@ -1133,15 +1300,107 @@ fn short_provider_label(provider: ProviderKind) -> &'static str {
     }
 }
 
-fn store_key(state: &UiState, model_id: &str, key: &str) -> Result<(), String> {
-    state
-        .secrets
-        .set_model_key(model_id, key)
-        .map_err(|error| format!("could not store the API key: {error}"))?;
-    match state.secrets.get_model_key(model_id) {
-        Some(stored) if sanitize_api_key(&stored) == key => Ok(()),
-        _ => Err("the API key could not be read back after saving".to_string()),
+/// Update the small count label under the key list.
+fn set_key_hint(form: &Form, text: &str) {
+    form.key_hint.set_label(text);
+}
+
+/// Write the form's key rows into `pool_id`'s pool and delete the secrets the
+/// user removed. Existing key ids are reused so an unchanged entry keeps its
+/// secret and its exhausted flag.
+///
+/// `same_pool` is false when the provider just moved to a different base URL.
+/// In that case the keys already stored for the new URL (it may be shared with
+/// another model) are preserved, and the form's rows are merged in instead of
+/// replacing them.
+fn sync_key_pool(
+    state: &UiState,
+    form: &Form,
+    pool_id: &str,
+    same_pool: bool,
+) -> Result<(), String> {
+    if pool_id.is_empty() {
+        return Ok(());
     }
+    let existing = state.key_pool_snapshot(pool_id);
+    let existing_by_id: std::collections::HashMap<&str, &ApiKeyEntry> = existing
+        .keys
+        .iter()
+        .map(|entry| (entry.id.as_str(), entry))
+        .collect();
+
+    let mut entries: Vec<ApiKeyEntry> = if same_pool {
+        Vec::new()
+    } else {
+        existing.keys.clone()
+    };
+    let mut kept: std::collections::HashSet<String> =
+        entries.iter().map(|entry| entry.id.clone()).collect();
+    // Secrets already present, so merging into a shared URL does not duplicate.
+    let mut known: std::collections::HashSet<String> = if same_pool {
+        std::collections::HashSet::new()
+    } else {
+        existing
+            .keys
+            .iter()
+            .filter_map(|entry| state.secrets.get_pool_key(pool_id, &entry.id))
+            .map(|secret| sanitize_api_key(&secret))
+            .filter(|secret| !secret.is_empty())
+            .collect()
+    };
+
+    for item in form.keys.borrow().iter() {
+        let secret = sanitize_api_key(&item.entry.text());
+        if secret.is_empty() {
+            continue;
+        }
+        if !known.insert(secret.clone()) {
+            continue;
+        }
+        if entries.len() >= MAX_KEYS_PER_POOL {
+            return Err(format!("a base URL can hold at most {MAX_KEYS_PER_POOL} keys"));
+        }
+        let id = if item.pool_id.is_empty() || !existing_by_id.contains_key(item.pool_id.as_str())
+        {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            item.pool_id.clone()
+        };
+        state.store_pool_key(pool_id, &id, &secret)?;
+        let (exhausted, exhausted_at) = existing_by_id
+            .get(id.as_str())
+            .map(|entry| (entry.exhausted, entry.exhausted_at))
+            .unwrap_or((false, None));
+        entries.push(ApiKeyEntry {
+            id: id.clone(),
+            label: format!("Key {}", entries.len() + 1),
+            exhausted,
+            exhausted_at,
+        });
+        kept.insert(id);
+    }
+
+    if same_pool {
+        for entry in &existing.keys {
+            if !kept.contains(&entry.id) {
+                state.delete_pool_key(pool_id, &entry.id);
+            }
+        }
+    }
+
+    let active = if entries.is_empty() {
+        0
+    } else {
+        existing.active.min(entries.len() - 1)
+    };
+    state.set_key_pool(
+        pool_id,
+        ApiKeyPool {
+            keys: entries,
+            active,
+        },
+    );
+    Ok(())
 }
 
 fn placeholder_row(text: &str) -> gtk::ListBoxRow {

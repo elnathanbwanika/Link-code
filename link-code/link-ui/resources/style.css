@@ -1067,6 +1067,20 @@ button.lc-type-chip .openai { color: @lc_ok; }
 }
 .lc-form-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: @lc_muted; }
 .lc-form-hint { font-size: 10px; color: @lc_muted2; }
+.lc-key-row {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  padding: 2px 4px 2px 6px;
+}
+.lc-key-row entry.lc-input {
+  background-color: transparent;
+  border-color: transparent;
+  min-height: 28px;
+}
+.lc-key-row entry.lc-input:focus-within {
+  border-color: @lc_accent_border;
+}
 .lc-link { color: @lc_accent; font-size: 10px; }
 .lc-lock-badge { color: @lc_muted2; font-size: 9.5px; }
 

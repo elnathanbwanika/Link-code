@@ -21,7 +21,6 @@ use link_core::session::{Session, StoredRole};
 use link_core::tool::ToolContext;
 use link_models::types::ChatMessage;
 
-use link_models::provider::provider_for;
 use link_tools::builtin_registry;
 
 use crate::dialogs::approval::{GtkApprover, GtkAsker};
@@ -850,7 +849,6 @@ pub fn send_message(state: &Rc<UiState>) {
         crate::dialogs::models::present(state);
         return;
     };
-    let api_key = state.api_key_for(&model);
     let Some(session_id) = state.ensure_session() else {
         return;
     };
@@ -914,7 +912,7 @@ pub fn send_message(state: &Rc<UiState>) {
     rules.deny_always.extend(config.permissions.deny_always.iter().cloned());
     let engine = PermissionEngine::new(state.mode(), rules);
 
-    let provider = provider_for(&model, api_key);
+    let provider = state.rotating_provider(&model);
 
     // Build the effective system prompt: user's override (if any) + built-in
     // skills that give the agent web, debugging, and full-stack coding abilities.
