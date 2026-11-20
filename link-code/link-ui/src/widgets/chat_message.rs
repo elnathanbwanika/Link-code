@@ -276,7 +276,7 @@ pub fn render_markdown_prose_only(container: &gtk::Box, text: &str) {
                 let lbl = gtk::Label::new(None);
                 let escaped = glib::markup_escape_text(name);
                 lbl.set_markup(&format!(
-                    "<span foreground=\"#777\" size=\"small\">\u{21b3} {escaped} \u{2014} shown in editor</span>"
+                    "<span foreground=\"#9B948C\" size=\"small\">\u{21b3} {escaped} \u{2014} shown in editor</span>"
                 ));
                 lbl.set_xalign(0.0);
                 lbl.set_margin_top(2);

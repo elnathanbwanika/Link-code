@@ -28,16 +28,16 @@ use crate::state::{UiState, Widgets};
 use crate::widgets;
 
 /// Default window size: roughly a large terminal window, not a full-screen IDE.
-const DEFAULT_WIDTH: i32 = 960;
-const DEFAULT_HEIGHT: i32 = 620;
+const DEFAULT_WIDTH: i32 = 1280;
+const DEFAULT_HEIGHT: i32 = 800;
 /// Smallest size the three columns stay usable at.
-const MIN_WIDTH: i32 = 960;
-const MIN_HEIGHT: i32 = 480;
+const MIN_WIDTH: i32 = 900;
+const MIN_HEIGHT: i32 = 560;
 
 /// Minimum widths for the three columns, in pixels.
-const SIDEBAR_MIN: i32 = 200;
+const SIDEBAR_MIN: i32 = 260;
 const EDITOR_MIN: i32 = 360;
-const AGENT_MIN: i32 = 300;
+const AGENT_MIN: i32 = 360;
 /// Height kept for the editor and the bottom panel.
 const EDITOR_MIN_HEIGHT: i32 = 180;
 const BOTTOM_MIN_HEIGHT: i32 = 130;
@@ -187,7 +187,7 @@ impl LinkWindow {
         // ---- rail --------------------------------------------------------
         let rail = gtk::Box::new(gtk::Orientation::Vertical, 4);
         rail.add_css_class("lc-rail");
-        rail.set_width_request(56);
+        rail.set_width_request(48);
         rail.set_margin_top(8);
         rail.set_margin_bottom(8);
 
@@ -247,7 +247,7 @@ impl LinkWindow {
         let h_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         h_paned.set_start_child(Some(&sidebar.root));
         h_paned.set_end_child(Some(&agent_paned));
-        h_paned.set_position(220);
+        h_paned.set_position(280);
         h_paned.set_resize_start_child(false);
         h_paned.set_shrink_start_child(false);
         h_paned.set_resize_end_child(true);
@@ -292,7 +292,9 @@ impl LinkWindow {
             stop_button: agent.stop_button.clone(),
             mode_button: agent.mode_button.clone(),
             model_button: model_button.clone(),
+            composer_model_button: agent.composer_model_button.clone(),
             context_bar: agent.context_bar.clone(),
+            context_label: agent.context_label.clone(),
             tasks: agent.tasks.clone(),
             suggestions_box: agent.suggestions_box.clone(),
             attachments_box: agent.attachments_box.clone(),
@@ -343,9 +345,9 @@ impl LinkWindow {
                     let sidebar = layout
                         .get("sidebar")
                         .copied()
-                        .unwrap_or_else(|| (width / 4).clamp(SIDEBAR_MIN, 240));
+                        .unwrap_or_else(|| (width / 4).clamp(SIDEBAR_MIN, 300));
                     let max_sidebar =
-                        (width - 56 - EDITOR_MIN - AGENT_MIN - 10).max(SIDEBAR_MIN);
+                        (width - 48 - EDITOR_MIN - AGENT_MIN - 10).max(SIDEBAR_MIN);
                     widgets
                         .h_paned
                         .set_position(sidebar.clamp(SIDEBAR_MIN, max_sidebar));
@@ -353,10 +355,10 @@ impl LinkWindow {
                     let columns = if widgets.agent_paned.width() > 0 {
                         widgets.agent_paned.width()
                     } else {
-                        width - 56 - sidebar
+                        width - 48 - sidebar
                     };
                     let agent = layout.get("agent").copied().unwrap_or_else(|| {
-                        (columns / 3).clamp(AGENT_MIN, 360)
+                        (columns / 3).clamp(AGENT_MIN, 440)
                     });
                     let max_agent = (columns - EDITOR_MIN - 8).max(AGENT_MIN);
                     widgets

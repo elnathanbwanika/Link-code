@@ -1,275 +1,528 @@
 /* ==========================================================================
-   Link Code — Link Ecosystem design system
-   Pure black base, #ff6600 accent, Syncopate headings, JetBrains Mono code,
-   Inter body. 10px cards, 8px buttons, 6px chips, flat with 1px borders.
+   Link Code — warm charcoal + salmon design system
+   --------------------------------------------------------------------------
+   GTK's CSS dialect has no custom properties, so the published palette is
+   mapped to named colours here and referenced everywhere with @lc_*.
+   Radii: cards 16 · composer 28 · chips/buttons 999 or 12 · tiles 12
    ========================================================================== */
 
-@define-color lc_bg            #000000;
-@define-color lc_panel         #0d0d0d;
-@define-color lc_card          #141414;
-@define-color lc_border        #232323;
-@define-color lc_hover         #1c1c1c;
-@define-color lc_accent        #ff6600;
-@define-color lc_accent_dim    #b34700;
-@define-color lc_text          #f2f2f2;
-@define-color lc_text_dim      #9a9a9a;
-@define-color lc_text_disabled #5c5c5c;
-@define-color lc_green         #2ecc71;
-@define-color lc_red           #ff4d4d;
-@define-color lc_amber         #ffb020;
-@define-color lc_blue          #4da3ff;
+@define-color lc_bg            #252524;
+@define-color lc_sidebar       #2a2928;
+@define-color lc_surface       #2e2d2b;
+@define-color lc_surface2      #353331;
+@define-color lc_border        rgba(255, 255, 255, 0.06);
+@define-color lc_border_strong rgba(255, 255, 255, 0.12);
+@define-color lc_text          #ede8e2;
+@define-color lc_muted         #9b948c;
+@define-color lc_muted2        #6f6963;
+@define-color lc_accent        #e8927c;
+@define-color lc_accent_fill   #e8957f;
+@define-color lc_accent_tint   rgba(232, 146, 124, 0.14);
+@define-color lc_accent_border rgba(232, 146, 124, 0.75);
+@define-color lc_ok            #6fbf73;
+@define-color lc_err           #e5534b;
+@define-color lc_info          #4a9fe0;
 
-/* Bundled families. The files are installed into ~/.local/share/fonts on
-   first run, where fontconfig discovers them; the provider then refers to the
-   families by name. */
+/* Legacy aliases used across the app — all remapped to the new palette. */
+@define-color lc_panel         #2a2928;
+@define-color lc_card          #2e2d2b;
+@define-color lc_hover         #353331;
+@define-color lc_accent_dim    #b97262;
+@define-color lc_text_dim      #9b948c;
+@define-color lc_text_disabled #6f6963;
+@define-color lc_green         #6fbf73;
+@define-color lc_red           #e5534b;
+@define-color lc_amber         #d6a562;
+@define-color lc_blue          #4a9fe0;
+@define-color lc_dark_text     #2a1a15;
 
-* {
-  outline-color: alpha(@lc_accent, 0.6);
+/* ------------------------------------------------------------------ base */
+*:focus {
+  outline-color: @lc_accent_border;
+  outline-width: 2px;
+  outline-offset: -2px;
 }
 
 window, .lc-root {
   background-color: @lc_bg;
   color: @lc_text;
-  font-family: "Inter", "Cantarell", sans-serif;
-  font-size: 11px;
+  font-family: "Inter", "Roboto", "Cantarell", sans-serif;
+  font-size: 13px;
 }
 
-/* Syncopate is very wide, so display faces sit a step below body text. */
-.lc-title    { font-family: "Syncopate", sans-serif; font-size: 11px; font-weight: 700;
-               letter-spacing: 0.06em; }
-.lc-heading  { font-family: "Syncopate", sans-serif; font-size: 12px; font-weight: 400;
-               letter-spacing: 0.05em; }
-.lc-section  { font-family: "Syncopate", sans-serif; font-size: 9.5px; font-weight: 700;
-               letter-spacing: 0.09em; color: @lc_text_dim; }
-.lc-mono, .lc-code, textview.lc-code text, .lc-path {
+label { color: @lc_text; }
+.lc-title    { font-family: "Inter", sans-serif; font-size: 13px; font-weight: 700; }
+.lc-heading  { font-family: "Inter", sans-serif; font-size: 15px; font-weight: 600; }
+.lc-section  { font-family: "Inter", sans-serif; font-size: 11px; font-weight: 600;
+               letter-spacing: 0.08em; color: @lc_muted; }
+.lc-mono, .lc-code, textview.lc-code text, .lc-path, .lc-num {
   font-family: "JetBrains Mono", monospace;
 }
-/* GTK's default `view` background is light even in a dark app, so code views
-   have to paint themselves. */
-textview.lc-code, textview.lc-code text {
-  background-color: @lc_bg; color: @lc_text;
-}
-textview.lc-code text selection { background-color: alpha(@lc_accent, 0.35); color: @lc_text; }
-.lc-path     { font-size: 11px; color: @lc_text_dim; }
-.lc-dim      { color: @lc_text_dim; }
-.lc-bg       { background-color: @lc_bg; }
-notebook.lc-notebook, notebook.lc-notebook > stack,
-notebook.lc-notebook > stack > box { background-color: @lc_bg; }
-.lc-disabled { color: @lc_text_disabled; }
+.lc-path     { font-size: 12px; color: @lc_muted; }
+.lc-dim      { color: @lc_muted; }
+.lc-disabled { color: @lc_muted2; }
 .lc-accent   { color: @lc_accent; }
-.lc-ok       { color: @lc_green; }
+.lc-ok       { color: @lc_ok; }
 .lc-warn     { color: @lc_amber; }
-.lc-error    { color: @lc_red; }
-.lc-info     { color: @lc_blue; }
-.lc-tiny     { font-size: 9px; }
+.lc-error    { color: @lc_err; }
+.lc-info     { color: @lc_info; }
+.lc-tiny     { font-size: 11px; }
+.lc-bg       { background-color: @lc_bg; }
 
-/* Editor diff gutter highlights — painted over the existing text view */
-.lc-editor-added   { background-color: alpha(@lc_green, 0.18); }
-.lc-editor-removed { background-color: alpha(@lc_red, 0.18); }
-
-/* ------------------------------------------------------------ code editor */
-.lc-editor-body { background-color: @lc_bg; }
-.lc-editor-gutter {
-  background-color: #0b0b0b;
-  border-right: 1px solid @lc_border;
-}
-.lc-editor-scroll { background-color: @lc_bg; border: none; }
-.lc-editor-scroll > scrollbar { background-color: @lc_bg; }
-.lc-editor-scroll > scrollbar.vertical slider {
-  min-width: 8px; min-height: 28px; border-radius: 4px;
-  background-color: #4a4a4a; border: none;
-}
-.lc-editor-scroll > scrollbar.horizontal slider {
-  min-height: 8px; min-width: 28px; border-radius: 4px;
-  background-color: #4a4a4a; border: none;
-}
-.lc-editor-scroll > scrollbar slider:hover { background-color: #5c5c5c; }
-textview.lc-code text {
-  line-height: 1.6;
-}
-.lc-diff-bar {
-  background-color: alpha(@lc_card, 0.92);
-  border-bottom: 1px solid @lc_border;
-  padding: 2px 6px;
-}
-
-/* --------------------------------------------------------------- terminal */
-.lc-terminal-bar { min-height: 20px; }
-.lc-terminal {
-  font-size: 11.5px;
-  padding: 0;
-}
-textview.lc-terminal, textview.lc-terminal text {
-  background-color: @lc_bg; color: @lc_text;
-}
-
-/* ---------------------------------------------------------------- header */
+/* --------------------------------------------------------------- header */
 .lc-header {
   background-color: @lc_bg;
   border-bottom: 1px solid @lc_border;
-  min-height: 36px;
-  padding: 0 6px;
+  min-height: 44px;
+  padding: 0 8px;
 }
-.lc-logo-mark { color: @lc_accent; font-size: 13px; }
+.lc-logo-mark { color: @lc_accent; font-size: 14px; }
 .lc-header-button {
-  min-height: 20px;
-  background: transparent; border: 1px solid transparent; border-radius: 6px;
-  padding: 2px 6px; color: @lc_text_dim; transition: all 140ms ease-out;
+  min-height: 30px; min-width: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: @lc_muted;
+  transition: background-color 160ms ease, color 160ms ease,
+              border-color 160ms ease;
 }
-.lc-header-button:hover { background-color: @lc_hover; color: @lc_text; }
-.lc-header-button:checked { color: @lc_accent; border-color: @lc_border; }
+.lc-header-button:hover { background-color: @lc_surface2; color: @lc_text; }
+.lc-header-button:checked {
+  color: @lc_accent; background-color: @lc_accent_tint;
+  border-color: @lc_border;
+}
 
-/* ------------------------------------------------------------------ rail */
+/* --------------------------------------------------------- icon buttons */
+.lc-icon-btn {
+  min-width: 36px; min-height: 36px;
+  padding: 0;
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  color: @lc_text;
+  transition: background-color 160ms ease, border-color 160ms ease,
+              color 160ms ease;
+}
+.lc-icon-btn:hover { background-color: @lc_surface2; border-color: @lc_border_strong; }
+.lc-icon-btn:active { background-color: @lc_border_strong; }
+.lc-icon-btn.flat { background: transparent; border-color: transparent; color: @lc_muted; }
+.lc-icon-btn.flat:hover { background-color: @lc_surface2; color: @lc_text; }
+.lc-icon-btn.floating {
+  background-color: rgba(46, 45, 43, 0.86);
+  border: 1px solid @lc_border_strong;
+}
+.lc-icon-btn.outline-accent {
+  background-color: @lc_accent_tint;
+  border: 1px solid @lc_accent_border;
+  color: @lc_accent;
+}
+.lc-icon-btn.outline-accent:hover { background-color: rgba(232, 146, 124, 0.24); }
+.lc-icon-btn.danger { color: @lc_err; border-color: rgba(229, 83, 75, 0.5); }
+
+/* Round solid accent "+" button. */
+button.lc-plus {
+  min-width: 36px; min-height: 36px; padding: 0;
+  background-color: @lc_accent;
+  color: @lc_dark_text;
+  border: none; border-radius: 999px;
+  transition: background-color 160ms ease;
+}
+button.lc-plus:hover { background-color: @lc_accent_fill; }
+button.lc-plus image { color: @lc_dark_text; }
+
+/* --------------------------------------------------------------- rail */
 .lc-rail {
-  background-color: @lc_bg;
+  background-color: @lc_sidebar;
   border-right: 1px solid @lc_border;
-  padding: 6px 3px;
-  min-width: 44px;
+  padding: 8px 4px;
+  min-width: 48px;
 }
 .lc-rail button {
-  background: transparent; border: none; border-radius: 6px;
-  padding: 6px; color: @lc_text_dim; transition: all 140ms ease-out;
+  background: transparent; border: none; border-radius: 12px;
+  padding: 7px; min-width: 32px; min-height: 32px;
+  color: @lc_muted; transition: background-color 160ms ease, color 160ms ease;
 }
-.lc-rail button:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-rail button:hover { background-color: @lc_surface2; color: @lc_text; }
 .lc-rail button:checked {
-  color: @lc_accent; background-color: alpha(@lc_accent, 0.12);
-  box-shadow: inset 2px 0 0 @lc_accent;
+  color: @lc_accent; background-color: @lc_accent_tint;
 }
 
 /* --------------------------------------------------------------- panels */
-.lc-sidebar { background-color: @lc_panel; border-right: 1px solid @lc_border; }
+.lc-sidebar { background-color: @lc_sidebar; border-right: 1px solid @lc_border; }
 .lc-center  { background-color: @lc_bg; }
-.lc-agent   { background-color: @lc_panel; border-left: 1px solid @lc_border; }
-.lc-bottom  { background-color: @lc_panel; border-top: 1px solid @lc_border; }
+.lc-agent   { background-color: @lc_bg; }
+.lc-bottom  { background-color: @lc_bg; border-top: 1px solid @lc_border; }
 
 .lc-status {
-  background-color: @lc_bg; border-top: 1px solid @lc_border;
-  min-height: 20px; padding: 0 8px; font-size: 10.5px; color: @lc_text_dim;
+  background-color: @lc_sidebar;
+  border-top: 1px solid @lc_border;
+  min-height: 26px; padding: 0 10px;
+  font-size: 11.5px; color: @lc_muted;
 }
-.lc-status .lc-sep { color: @lc_border; }
+.lc-status .lc-sep { color: @lc_muted2; }
 
 /* ---------------------------------------------------------------- cards */
 .lc-card {
-  background-color: @lc_card;
+  background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 8px;
-  padding: 7px 9px;
+  border-radius: 16px;
+  padding: 16px;
 }
-.lc-card:hover { border-color: #2c2c2c; }
+.lc-card:hover { border-color: @lc_border_strong; }
+.lc-card-selected {
+  background-color: @lc_accent_tint;
+  border: 1.5px solid @lc_accent_border;
+}
+.lc-card-selected .lc-card-title { color: @lc_accent; }
 
+/* --------------------------------------------------------- sidebar shell */
+.lc-sidebar-header { padding: 14px 14px 8px 14px; }
+.lc-workspace-label { color: @lc_accent; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.14em; }
+
+/* 32px rounded icon tile in the header. */
+.lc-tile-sm {
+  min-width: 32px; min-height: 32px;
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  color: @lc_accent;
+}
+.lc-tile {
+  min-width: 44px; min-height: 44px;
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  color: @lc_text;
+}
+.lc-tile-lg {
+  min-width: 48px; min-height: 48px;
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  color: @lc_text;
+}
+
+/* Workspace card -------------------------------------------------------- */
+.lc-workspace-card {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 16px;
+  padding: 14px;
+}
+.lc-workspace-name {
+  font-size: 18px; font-weight: 700; color: @lc_text;
+}
+.lc-run-btn {
+  min-width: 34px; min-height: 34px; padding: 0;
+  background-color: rgba(111, 191, 115, 0.16);
+  border: 1px solid rgba(111, 191, 115, 0.5);
+  border-radius: 999px;
+  color: @lc_ok;
+}
+.lc-run-btn:hover { background-color: rgba(111, 191, 115, 0.28); }
+button.lc-pill-btn {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  color: @lc_text;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+button.lc-pill-btn:hover { border-color: @lc_border_strong; background-color: #3b3937; }
+
+/* Section heading rows -------------------------------------------------- */
+.lc-side-section { padding: 14px 14px 4px 14px; }
+.lc-count-badge {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  color: @lc_text;
+}
+
+/* Thread cards ---------------------------------------------------------- */
+.lc-thread-card {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 10px 12px;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.lc-thread-card:hover { background-color: @lc_surface; }
+.lc-thread-card.lc-card-selected {
+  background-color: @lc_accent_tint;
+  border-color: @lc_accent_border;
+}
+.lc-thread-title { font-size: 13px; font-weight: 600; color: @lc_text; }
+.lc-thread-card.lc-card-selected .lc-thread-title { color: @lc_accent; }
+.lc-thread-preview { font-size: 11.5px; color: @lc_muted; }
+.lc-thread-action {
+  background: transparent; border: none; border-radius: 8px;
+  min-width: 24px; min-height: 24px; padding: 2px;
+  color: @lc_muted2; opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+.lc-thread-card:hover .lc-thread-action { opacity: 1; }
+.lc-thread-action:hover { background-color: @lc_surface2; color: @lc_text; }
+
+/* IDE pill -------------------------------------------------------------- */
+button.lc-ide-pill {
+  background-color: @lc_accent_tint;
+  border: 1px solid @lc_accent_border;
+  border-radius: 999px;
+  padding: 2px 10px;
+  min-height: 24px;
+  color: @lc_accent;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em;
+}
+button.lc-ide-pill:hover { background-color: rgba(232, 146, 124, 0.24); }
+button.lc-ide-pill:checked { background-color: @lc_accent; color: @lc_dark_text; }
+
+/* File rows ------------------------------------------------------------- */
+.lc-file-row {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 0 8px;
+  min-height: 32px;
+  color: @lc_text;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.lc-file-row:hover { background-color: @lc_surface2; }
+.lc-file-row.file-selected {
+  background-color: @lc_accent_tint;
+  border-color: rgba(232, 146, 124, 0.4);
+}
+.lc-file-row.file-selected label { color: @lc_accent; }
+.lc-file-row label { font-size: 12.5px; }
+.lc-folder-arrow {
+  background: transparent; border: none; min-width: 16px; min-height: 16px;
+  padding: 0; color: @lc_muted2; font-size: 10px;
+}
+.lc-folder-arrow:hover { color: @lc_text; }
+
+/* File-type glyphs (colour coded). */
+.lc-ftype { font-family: "JetBrains Mono", monospace; font-size: 10px;
+  font-weight: 700; min-width: 18px; }
+.lc-ftype-md      { color: #6cb6ff; }
+.lc-ftype-json    { color: #d9b45b; }
+.lc-ftype-gradle  { color: #4fbfa8; }
+.lc-ftype-git     { color: #e8927c; }
+.lc-ftype-js      { color: #e5c07b; }
+.lc-ftype-html    { color: #e8927c; }
+.lc-ftype-css     { color: #6cb6ff; }
+.lc-ftype-kt      { color: #b48ce0; }
+.lc-ftype-py      { color: #7fb3e8; }
+.lc-ftype-rs      { color: #e8927c; }
+.lc-ftype-toml    { color: #b0a08e; }
+.lc-ftype-img     { color: #b48ce0; }
+.lc-ftype-default { color: @lc_muted; }
+.lc-folder        { color: #b99a72; }
+.lc-folder-special { color: #e8927c; }
+.lc-folder-blue   { color: #6cb6ff; }
+.lc-folder-teal   { color: #4fbfa8; }
+
+/* Watermark behind the file list. */
+.lc-watermark { color: @lc_text; opacity: 0.05; }
+
+/* Sidebar bottom dock. */
+.lc-sidebar-bottom {
+  border-top: 1px solid @lc_border;
+  padding: 8px 10px;
+  background-color: @lc_sidebar;
+}
+.lc-sidebar-bottom button {
+  background: transparent; border: none; border-radius: 10px;
+  min-width: 34px; min-height: 34px; padding: 3px;
+  color: @lc_muted;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.lc-sidebar-bottom button:hover { background-color: @lc_surface2; color: @lc_text; }
+
+/* Filter pill ----------------------------------------------------------- */
+entry.lc-filter, searchentry.lc-filter {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: @lc_text;
+}
+entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
+  border-color: @lc_accent_border;
+}
 /* -------------------------------------------------------------- chat log */
-.lc-conversation { background-color: @lc_panel; }
-.lc-block-user {
-  background-color: alpha(@lc_accent, 0.10);
-  border: 1px solid alpha(@lc_accent, 0.45);
-  border-radius: 6px; padding: 4px 6px;
-}
+.lc-conversation { background-color: @lc_bg; }
 .lc-block-assistant { background-color: transparent; border: none;
-  border-radius: 0; padding: 1px 2px; }
-.lc-block-system { padding: 1px 3px; color: @lc_text_disabled; font-size: 9px; }
-.lc-block-error {
-  background-color: alpha(@lc_red, 0.08);
-  border: 1px solid @lc_red; border-radius: 6px; padding: 4px 6px;
+  border-radius: 0; padding: 2px 4px 6px 4px; }
+.lc-block-user {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 16px;
+  padding: 10px 14px;
 }
-.lc-block-plan { border: 1px dashed @lc_border; border-radius: 6px; padding: 4px 6px; }
+.lc-block-system { padding: 3px 4px; color: @lc_muted2; font-size: 11px; }
+.lc-block-error {
+  background-color: rgba(229, 83, 75, 0.10);
+  border: 1px solid rgba(229, 83, 75, 0.45);
+  border-radius: 12px; padding: 10px 12px;
+}
+.lc-block-plan { border: 1px solid @lc_border; border-radius: 14px; padding: 12px; }
+.lc-body { font-size: 15px; line-height: 1.6; }
+.lc-body.lc-tiny { font-size: 11px; }
+
+/* Header line above an assistant reply. */
+.lc-reply-head { color: @lc_muted; padding-left: 4px; }
 
 /* Copy button that appears on hover over a chat bubble */
 .lc-copy-btn {
-  background: transparent; border: none; border-radius: 4px;
-  padding: 1px 4px; color: @lc_text_disabled; min-height: 0;
-  font-size: 9px; transition: all 100ms ease-out;
+  background: transparent; border: none; border-radius: 8px;
+  padding: 2px 5px; color: @lc_muted2; min-height: 0;
+  font-size: 10px; transition: background-color 140ms ease, color 140ms ease;
 }
-.lc-copy-btn:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-copy-btn:hover { background-color: @lc_surface2; color: @lc_text; }
 
-/* Suggestion header row with dismiss button */
-.lc-suggestion-header { color: @lc_text_disabled; font-size: 9px; }
+.lc-suggestion-header { color: @lc_muted2; font-size: 10.5px; }
 
 .lc-badge {
-  background-color: #1a1a1a; border: 1px solid @lc_border; border-radius: 5px;
-  padding: 0 6px; font-family: "JetBrains Mono", monospace;
-  font-size: 10px; color: @lc_text_dim;
+  background-color: @lc_surface2; border: 1px solid @lc_border; border-radius: 999px;
+  padding: 1px 8px; font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px; color: @lc_muted;
 }
-.lc-badge-accent { color: @lc_accent; border-color: alpha(@lc_accent, 0.45); }
+.lc-badge-accent { color: @lc_accent; border-color: @lc_accent_border;
+  background-color: @lc_accent_tint; }
 
-.lc-chip {
-  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 5px;
-  padding: 0 6px; font-size: 10px;
-}
-.lc-chip-pending { color: @lc_text_dim; }
-.lc-chip-running { color: @lc_amber; border-color: alpha(@lc_amber, 0.5); }
-.lc-chip-done    { color: @lc_green; border-color: alpha(@lc_green, 0.5); }
-.lc-chip-failed  { color: @lc_red;   border-color: alpha(@lc_red, 0.5); }
-.lc-chip-denied  { color: @lc_text_disabled; }
-
-/* Compact chat chip for streamed file edits: one line, no code. */
-.lc-edit-chip {
-  background-color: alpha(@lc_accent, 0.08);
-  border: 1px solid alpha(@lc_accent, 0.28);
-  border-radius: 999px;
-  padding: 1px 10px 1px 7px;
-  min-height: 20px;
-  transition: all 120ms ease-out;
-}
-.lc-edit-chip:hover {
-  background-color: alpha(@lc_accent, 0.16);
-  border-color: alpha(@lc_accent, 0.55);
-}
-.lc-edit-glyph { color: @lc_accent; font-size: 11px; }
-.lc-edit-name {
+/* Inline code chips in message bodies. */
+.lc-code-chip {
+  background-color: @lc_surface2;
+  border-radius: 6px;
+  padding: 1px 6px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 0.92em;
   color: @lc_text;
 }
-.lc-edit-counts { font-size: 10px; font-family: "JetBrains Mono", monospace; }
-.lc-edit-spinner { color: @lc_accent; min-width: 12px; min-height: 12px; }
 
-/* One-line chips for reads, searches and commands in the conversation. */
-.lc-tool-chip-root { margin-bottom: 1px; }
-.lc-tool-chip {
-  background-color: transparent;
-  border: 1px solid alpha(@lc_border, 0.85);
-  border-radius: 999px;
-  padding: 0 9px 0 6px;
-  min-height: 19px;
-  transition: all 120ms ease-out;
+.lc-chip {
+  background-color: @lc_surface2; border: 1px solid @lc_border; border-radius: 999px;
+  padding: 2px 10px; font-size: 11px;
 }
-.lc-tool-chip:hover {
-  background-color: @lc_hover;
-  border-color: alpha(@lc_accent, 0.45);
-}
-.lc-tool-glyph { color: @lc_text_dim; font-size: 10px; }
-.lc-tool-label {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10.5px;
-  color: @lc_text_dim;
-}
-.lc-tool-chip:hover .lc-tool-label { color: @lc_text; }
-.lc-tool-detail { font-size: 10px; color: @lc_text_disabled; }
-.lc-tool-spinner { color: @lc_accent; min-width: 11px; min-height: 11px; }
-.lc-tool-chip-body {
-  background-color: @lc_card;
+.lc-chip-pending { color: @lc_muted; }
+.lc-chip-running { color: @lc_amber; border-color: rgba(214, 165, 98, 0.5); }
+.lc-chip-done    { color: @lc_ok; border-color: rgba(111, 191, 115, 0.5); }
+.lc-chip-failed  { color: @lc_err;   border-color: rgba(229, 83, 75, 0.5); }
+.lc-chip-denied  { color: @lc_muted2; }
+
+/* ------------------------------------------------ file-edit row (chat) */
+.lc-edit-row {
+  background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 6px;
-  padding: 5px 7px;
+  border-radius: 12px;
+  padding: 6px 10px;
+  min-height: 38px;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
-.lc-tool-note { margin-top: 1px; }
+.lc-edit-row:hover { border-color: @lc_border_strong; background-color: #32302e; }
+.lc-edit-file { font-family: "JetBrains Mono", monospace; font-size: 12.5px;
+  color: @lc_text; }
+button.lc-edit-file-btn {
+  background: transparent; border: none; padding: 0; min-height: 0;
+  min-width: 0; box-shadow: none;
+}
+button.lc-edit-file-btn:hover .lc-edit-file { color: @lc_accent; }
+.lc-edit-op { font-size: 11.5px; color: @lc_muted; }
+.lc-edit-op.lc-error { color: @lc_err; }
+.lc-add-pill {
+  background-color: rgba(111, 191, 115, 0.14);
+  border-radius: 999px; padding: 0 7px;
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+  color: @lc_ok;
+}
+.lc-del-pill {
+  background-color: rgba(229, 83, 75, 0.14);
+  border-radius: 999px; padding: 0 7px;
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+  color: @lc_err;
+}
+.lc-edit-duration { font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+  color: @lc_muted2; }
+.lc-edit-check { color: @lc_ok; font-size: 13px; }
+.lc-edit-chevron { color: @lc_muted2; font-size: 10px; }
+button.lc-edit-chevron {
+  background: transparent; border: none; padding: 0 2px;
+  min-width: 16px; min-height: 16px; box-shadow: none;
+}
+button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; border-radius: 6px; }
+.lc-edit-spinner { color: @lc_accent; min-width: 13px; min-height: 13px; }
+.lc-edit-detail {
+  background-color: @lc_bg;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  padding: 8px;
+  margin-top: 4px;
+}
+/* legacy chip classes kept for any older call sites */
+.lc-edit-glyph { color: @lc_accent; font-size: 11px; }
+.lc-edit-name { font-family: "JetBrains Mono", monospace; font-size: 12px; color: @lc_text; }
+.lc-edit-counts { font-size: 10.5px; font-family: "JetBrains Mono", monospace; }
+
+/* ------------------------------------------------------ tool rows (chat) */
+.lc-tool-chip-root { margin-bottom: 2px; }
+.lc-tool-row {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  padding: 6px 10px;
+  min-height: 36px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.lc-tool-row:hover { border-color: @lc_border_strong; }
+.lc-tool-glyph { color: @lc_muted; font-size: 12px; }
+.lc-tool-glyph.lc-ok { color: @lc_ok; }
+.lc-tool-glyph.lc-error { color: @lc_err; }
+.lc-tool-label { font-size: 12.5px; color: @lc_text; }
+.lc-tool-detail { font-size: 11px; color: @lc_muted; }
+.lc-tool-spinner { color: @lc_accent; min-width: 13px; min-height: 13px; }
+.lc-tool-chip-body {
+  background-color: @lc_bg;
+  border: 1px solid @lc_border;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+.lc-tool-note { margin-top: 2px; }
+/* legacy pill used by old call sites */
+.lc-tool-chip {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  padding: 6px 10px;
+  min-height: 36px;
+}
 
 /* Small header badge shown while the agent owns an editor buffer. */
 .lc-ai-badge {
-  background-color: alpha(@lc_accent, 0.16);
-  border: 1px solid alpha(@lc_accent, 0.5);
+  background-color: @lc_accent_tint;
+  border: 1px solid @lc_accent_border;
   border-radius: 999px;
   padding: 0 8px;
-  font-size: 9px;
+  font-size: 10.5px;
   color: @lc_accent;
 }
 .lc-ai-spinner { color: @lc_accent; min-width: 12px; min-height: 12px; }
 
 .lc-suggestion {
-  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 5px;
-  padding: 2px 6px; font-size: 9px; color: @lc_text; transition: all 140ms ease-out;
+  background-color: @lc_surface; border: 1px solid @lc_border; border-radius: 12px;
+  padding: 6px 10px; font-size: 12px; color: @lc_text;
+  transition: border-color 160ms ease, color 160ms ease;
 }
-.lc-suggestion:hover { border-color: @lc_accent; color: @lc_accent; }
+.lc-suggestion:hover { border-color: @lc_accent_border; color: @lc_accent; }
 
 /* Pulsing dot shown while the agent works. */
 @keyframes lc-pulse {
@@ -280,171 +533,626 @@ textview.lc-terminal, textview.lc-terminal text {
 .lc-working-dot { color: @lc_accent; animation: lc-pulse 1.4s ease-in-out infinite; }
 
 /* ---------------------------------------------------------------- diffs */
-.lc-diff { font-family: "JetBrains Mono", monospace; font-size: 11px; }
-.lc-diff-header { background-color: @lc_card; border-bottom: 1px solid @lc_border;
-  padding: 4px 8px; border-radius: 8px 8px 0 0; }
-.diff-added   { background-color: alpha(@lc_green, 0.12); color: #b7f5cd; }
-.diff-removed { background-color: alpha(@lc_red, 0.12); color: #ffc3c3; }
-.diff-context { color: @lc_text_dim; }
-.lc-gutter { color: @lc_text_disabled; font-size: 10px; }
-.lc-add-count { color: @lc_green; }
-.lc-del-count { color: @lc_red; }
+.lc-diff { font-family: "JetBrains Mono", monospace; font-size: 11.5px; }
+.lc-diff-header { background-color: @lc_surface; border-bottom: 1px solid @lc_border;
+  padding: 6px 10px; border-radius: 12px 12px 0 0; }
+.diff-added   { background-color: rgba(111, 191, 115, 0.12); color: #b7e6bb; }
+.diff-removed { background-color: rgba(229, 83, 75, 0.12); color: #f0b3af; }
+.diff-context { color: @lc_muted; }
+.lc-gutter { color: @lc_muted2; font-size: 10.5px; }
+.lc-add-count { color: @lc_ok; }
+.lc-del-count { color: @lc_err; }
 
 /* --------------------------------------------------------------- tables */
-.lc-todo-done { color: @lc_text_disabled; text-decoration: line-through; }
+.lc-todo-done { color: @lc_muted2; text-decoration: line-through; }
 .lc-todo-active { color: @lc_accent; }
 
-/* --------------------------------------------------- task bar + popover */
-menubutton.lc-task-bar > button {
-  background-color: @lc_card;
-  background-image: none;
-  border: none;
-  border-top: 1px solid @lc_border;
-  border-radius: 0;
-  padding: 4px 8px;
-  min-height: 0;
+/* -------------------------------------------- agent top floating row */
+.lc-agent-top {
+  padding: 8px 10px;
 }
-menubutton.lc-task-bar > button:hover { background-color: @lc_hover; }
-menubutton.lc-task-bar label { color: @lc_text; }
-menubutton.lc-task-bar-complete label { color: @lc_green; }
-.lc-task-progress { margin: 0; min-height: 3px; }
-.lc-task-progress trough { background-color: #262626; border-radius: 999px; min-height: 3px; }
-.lc-task-progress progress { background-color: @lc_accent; border-radius: 999px; min-height: 3px; }
-menubutton.lc-task-bar-complete .lc-task-progress progress { background-color: @lc_green; }
-popover.lc-task-popover > contents {
-  background-color: @lc_card;
-  border: 1px solid @lc_border;
-  border-radius: 10px;
+.lc-agent-toggle, .lc-agent-tools > button {
+  background-color: rgba(46, 45, 43, 0.88);
+  border: 1px solid @lc_border_strong;
+  border-radius: 999px;
+  min-width: 36px; min-height: 36px;
   padding: 0;
   color: @lc_text;
 }
-.lc-task-row { padding: 2px 0; }
-.lc-task-icon { font-size: 10px; }
-.lc-task-icon-pending { color: @lc_text_dim; }
+.lc-agent-toggle:hover, .lc-agent-tools > button:hover {
+  background-color: @lc_surface2;
+}
+.lc-agent-tools {
+  background-color: rgba(46, 45, 43, 0.78);
+  border: 1px solid @lc_border_strong;
+  border-radius: 999px;
+  padding: 2px;
+}
+.lc-agent-tools > button {
+  border: none; background: transparent;
+  min-width: 32px; min-height: 32px;
+}
+.lc-agent-tools > button:hover { background-color: @lc_surface2; }
+
+/* ----------------------------------------------- composer + context */
+.lc-input-bar {
+  background-color: @lc_bg;
+  border-top: none;
+  padding: 4px 10px 10px 10px;
+}
+.lc-context-row { padding: 0 4px 2px 4px; }
+.lc-context-label { font-size: 10.5px; color: @lc_muted; }
+.lc-context-meter, .lc-meter {
+  min-height: 3px; margin: 0 2px 4px 2px;
+}
+.lc-context-meter trough, .lc-meter trough {
+  background-color: @lc_border; border-radius: 999px; min-height: 3px;
+  border: none;
+}
+.lc-context-meter progress, .lc-meter progress {
+  background-color: @lc_accent; border-radius: 999px; min-height: 3px;
+}
+.lc-meter.lc-meter-warn progress { background-color: @lc_amber; }
+.lc-meter.lc-meter-full progress { background-color: @lc_err; }
+
+.lc-composer {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 28px;
+  padding: 10px 10px 8px 10px;
+  transition: border-color 160ms ease;
+}
+.lc-composer:focus-within { border-color: @lc_border_strong; }
+textview.lc-input, textview.lc-input text {
+  background-color: transparent;
+  color: @lc_text;
+  font-size: 14.5px;
+}
+textview.lc-input { padding: 0; }
+.lc-composer-placeholder { color: @lc_muted; font-size: 14.5px; }
+.lc-composer-bar { padding: 2px 0 0 0; }
+
+button.lc-model-chip {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: @lc_text;
+  font-size: 12px;
+}
+button.lc-model-chip:hover { border-color: @lc_border_strong; }
+button.lc-mode-pill {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 12px;
+  color: @lc_muted;
+  font-size: 11.5px;
+}
+button.lc-mode-pill:hover { color: @lc_text; border-color: @lc_border_strong; }
+button.lc-mode-pill.full-auto {
+  color: @lc_accent; border-color: @lc_accent_border;
+  background-color: @lc_accent_tint;
+}
+
+button.lc-send {
+  min-width: 36px; min-height: 36px; padding: 0;
+  background-color: @lc_surface2;
+  color: @lc_muted2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+button.lc-send:hover { color: @lc_muted; }
+button.lc-send.lc-send-active {
+  background-color: @lc_accent_fill;
+  color: @lc_dark_text;
+  border-color: transparent;
+}
+button.lc-send.lc-send-active image { color: @lc_dark_text; }
+button.lc-stop {
+  min-width: 36px; min-height: 36px; padding: 0;
+  background-color: @lc_accent;
+  color: @lc_dark_text;
+  border: none; border-radius: 12px;
+}
+button.lc-stop:hover { background-color: @lc_accent_fill; }
+
+/* ------------------------------------------------ task bar + popover */
+menubutton.lc-task-bar > button {
+  background-color: @lc_surface;
+  background-image: none;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  padding: 5px 10px;
+  min-height: 0;
+  margin: 0 2px 2px 2px;
+}
+menubutton.lc-task-bar > button:hover { background-color: @lc_surface2; }
+menubutton.lc-task-bar label { color: @lc_text; }
+menubutton.lc-task-bar-complete label { color: @lc_ok; }
+.lc-task-progress { margin: 0; min-height: 3px; }
+.lc-task-progress trough { background-color: @lc_border; border-radius: 999px; min-height: 3px; }
+.lc-task-progress progress { background-color: @lc_accent; border-radius: 999px; min-height: 3px; }
+menubutton.lc-task-bar-complete .lc-task-progress progress { background-color: @lc_ok; }
+popover.lc-task-popover > contents {
+  background-color: @lc_sidebar;
+  border: 1px solid @lc_border_strong;
+  border-radius: 16px;
+  padding: 0;
+  color: @lc_text;
+}
+.lc-task-row { padding: 3px 0; }
+.lc-task-icon { font-size: 11px; }
+.lc-task-icon-pending { color: @lc_muted; }
 .lc-task-icon-active { color: @lc_accent; }
-.lc-task-icon-done { color: @lc_green; }
+.lc-task-icon-done { color: @lc_ok; }
 
 /* ------------------------------------------------------------- controls */
 button.lc-primary {
   background-image: none;
-  background-color: @lc_accent;
-  color: #150a00;
-  border: 1px solid @lc_accent;
-  border-radius: 6px;
-  padding: 3px 10px;
-  min-height: 20px;
-  font-size: 12px;
+  background-color: @lc_accent_fill;
+  color: @lc_dark_text;
+  border: 1px solid @lc_accent_fill;
+  border-radius: 16px;
+  padding: 0 18px;
+  min-height: 44px;
+  font-size: 14px;
   font-weight: 600;
-  transition: all 140ms ease-out;
+  transition: background-color 160ms ease;
 }
-button.lc-primary:hover { background-color: #ff7d26; }
-button.lc-primary:disabled { background-color: @lc_card; color: @lc_text_disabled;
+button.lc-primary:hover { background-color: #f0a48f; }
+button.lc-primary:disabled { background-color: @lc_surface2; color: @lc_muted2;
   border-color: @lc_border; }
+button.lc-primary.wide { min-height: 48px; }
 
 button.lc-ghost {
-  background: transparent; border: 1px solid @lc_border; border-radius: 6px;
-  padding: 3px 9px; min-height: 20px; font-size: 12px; color: @lc_text;
+  background: transparent; border: 1px solid @lc_border; border-radius: 12px;
+  padding: 4px 10px; min-height: 28px; font-size: 12px; color: @lc_text;
 }
-button.lc-ghost:hover { background-color: @lc_hover; border-color: #333; }
-button.lc-danger { border-color: alpha(@lc_red, 0.6); color: @lc_red; }
+button.lc-ghost:hover { background-color: @lc_surface2; border-color: @lc_border_strong; }
+button.lc-danger { border-color: rgba(229, 83, 75, 0.5); color: @lc_err; }
 
-entry.lc-input, textview.lc-input {
-  background-color: @lc_card; color: @lc_text;
-  border: 1px solid @lc_border; border-radius: 6px;
-  padding: 2px 6px;
+button.lc-accent-outline {
+  background-color: @lc_accent_tint;
+  border: 1px solid @lc_accent_border;
+  border-radius: 14px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: @lc_accent;
+  font-weight: 600;
+  font-size: 12.5px;
 }
-entry.lc-input:focus-within, textview.lc-input:focus-within {
-  border-color: @lc_accent;
+button.lc-accent-outline:hover { background-color: rgba(232, 146, 124, 0.24); }
+
+entry.lc-input, textview.lc-input-text, spinbutton.lc-input, searchentry.lc-input {
+  background-color: @lc_surface2; color: @lc_text;
+  border: 1px solid @lc_border; border-radius: 12px;
+  padding: 6px 10px;
+  min-height: 36px;
+}
+entry.lc-input:focus-within, spinbutton.lc-input:focus-within,
+searchentry.lc-input:focus-within {
+  border-color: @lc_accent_border;
+  outline: 2px solid @lc_accent_border;
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
-.lc-input-bar { background-color: @lc_panel; border-top: 1px solid @lc_border; padding: 6px; }
-.lc-composer { background-color: @lc_card; border: 1px solid @lc_border; border-radius: 8px; }
-.lc-composer:focus-within { border-color: @lc_accent; }
-
+popover.lc-popover {
+  background: transparent;
+  box-shadow: none;
+}
 popover.lc-popover > contents {
-  background-color: @lc_card; border: 1px solid @lc_border; border-radius: 10px;
-  padding: 6px; color: @lc_text;
+  background-color: @lc_sidebar;
+  border: 1px solid @lc_border_strong;
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 168px;
+  color: @lc_text;
+  box-shadow: none;
 }
+popover.lc-popover > arrow { background-color: @lc_sidebar; border: 1px solid @lc_border_strong; }
+popover.lc-popover button {
+  background: transparent;
+  background-image: none;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: @lc_text;
+  box-shadow: none;
+}
+popover.lc-popover button:hover { background-color: @lc_surface2; }
+popover.lc-popover button.lc-danger { color: @lc_err; }
 
-.lc-risk-low    { color: @lc_blue; }
+.lc-risk-low    { color: @lc_info; }
 .lc-risk-medium { color: @lc_amber; }
-.lc-risk-high   { color: @lc_red; }
+.lc-risk-high   { color: @lc_err; }
 
 /* Modal overlay: dim the world behind a real modal dialog. */
 window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
 
-.lc-meter trough { background-color: #262626; border-radius: 999px; min-height: 4px; }
-.lc-meter progress { background-color: @lc_accent; border-radius: 999px; min-height: 4px; }
-.lc-meter.lc-meter-warn progress { background-color: @lc_amber; }
-.lc-meter.lc-meter-full progress { background-color: @lc_red; }
-
-.lc-statusbar-fullauto { background-color: alpha(@lc_red, 0.18); border-top-color: @lc_red; }
+.lc-statusbar-fullauto { background-color: @lc_accent_tint; border-top-color: @lc_accent_border; }
 
 .lc-welcome { padding: 24px; }
-.lc-recent-row { border-radius: 6px; padding: 4px 8px; }
-.lc-recent-row:hover { background-color: @lc_hover; }
+.lc-recent-row { border-radius: 12px; padding: 6px 10px; }
+.lc-recent-row:hover { background-color: @lc_surface2; }
 
-.lc-treeview row:selected { background-color: alpha(@lc_accent, 0.18); }
-.lc-treeview row:hover { background-color: @lc_hover; }
+.lc-treeview row:selected { background-color: @lc_accent_tint; }
+.lc-treeview row:hover { background-color: @lc_surface2; }
 
-.lc-tabstrip { background-color: @lc_bg; border-bottom: 1px solid @lc_border; }
+.lc-tabstrip { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
 .lc-tab {
   background: transparent; border: none; border-bottom: 2px solid transparent;
-  border-radius: 0; padding: 4px 9px; font-size: 11.5px; color: @lc_text_dim;
+  border-radius: 0; padding: 6px 10px; font-size: 12px; color: @lc_muted;
 }
-.lc-tab:hover { background-color: @lc_hover; color: @lc_text; }
+.lc-tab:hover { background-color: @lc_surface2; color: @lc_text; }
 .lc-tab:checked { color: @lc_text; border-bottom-color: @lc_accent; }
 .tab-dirty { color: @lc_accent; }
 
-/* ------------------------------------------------------------- dialogs */
-window.lc-dialog {
+/* ================================================================ editor */
+.lc-editor-scroll { background-color: @lc_bg; }
+.lc-editor-body, .lc-editor-body text {
   background-color: @lc_bg;
   color: @lc_text;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
 }
-window.lc-dialog headerbar {
+.lc-editor-body { padding: 8px 0; }
+.lc-editor-body text selection { background-color: @lc_accent_tint; }
+.lc-editor-body text cursor { color: @lc_accent; }
+.lc-editor-gutter { background-color: @lc_sidebar; }
+.lc-diff-bar {
+  background-color: @lc_sidebar;
+  border-bottom: 1px solid @lc_border;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.lc-editor-header {
   background-color: @lc_bg;
   border-bottom: 1px solid @lc_border;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.lc-editor-title { font-size: 12.5px; color: @lc_text; }
+.lc-editor-path { font-size: 11px; color: @lc_muted2; font-family: "JetBrains Mono", monospace; }
+.lc-editor-tab {
+  background: transparent; border: 1px solid transparent; border-radius: 9px;
+  padding: 3px 9px; font-size: 12px; color: @lc_muted;
+}
+.lc-editor-tab:hover { background-color: @lc_surface2; color: @lc_text; }
+.lc-editor-tab:checked { background-color: @lc_surface; color: @lc_text; border-color: @lc_border; }
+
+/* --------------------------------------------------------- bottom panel */
+.lc-notebook { background-color: @lc_bg; }
+.lc-notebook tabbar { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
+.lc-notebook tab {
+  background: transparent; border: none; padding: 4px 10px;
+  color: @lc_muted; font-size: 11.5px;
+}
+.lc-notebook tab:hover { color: @lc_text; }
+.lc-notebook tab:checked { color: @lc_text; box-shadow: inset 0 -2px @lc_accent; }
+.lc-terminal { background-color: @lc_bg; }
+.lc-terminal, .lc-terminal text {
+  background-color: @lc_bg;
+  color: @lc_text;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+.lc-terminal-bar {
+  background-color: @lc_sidebar;
+  border-bottom: 1px solid @lc_border;
+  min-height: 28px; padding: 0 10px;
+  color: @lc_muted; font-size: 11px;
+}
+
+/* ------------------------------------------------------------- dialogs */
+.lc-dialog { background-color: @lc_sidebar; color: @lc_text; }
+window.lc-dialog, .lc-dialog > contents {
+  background-color: @lc_sidebar;
+  border: 1px solid @lc_border_strong;
+  border-radius: 20px;
+}
+.lc-dialog headerbar {
+  background-color: @lc_sidebar;
+  border-bottom: 1px solid @lc_border;
+  min-height: 48px;
+  padding: 0 8px;
   box-shadow: none;
 }
-window.lc-dialog .lc-welcome { padding: 24px; }
-
-/* ---------------------------------------------------------- bottom tabs */
-.lc-notebook {
-  background-color: @lc_panel;
-  border-top: 1px solid @lc_border;
+.lc-dialog headerbar .title {
+  color: @lc_text; font-weight: 600; font-size: 14px;
 }
-.lc-notebook > header {
-  background-color: @lc_bg;
-  border-bottom: 1px solid @lc_border;
-  padding: 2px 6px;
-}
-.lc-notebook > header > tabs > tab {
+.lc-dialog headerbar windowcontrols button {
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 3px 8px;
-  color: @lc_text_dim;
-  font-size: 10.5px;
+  border-radius: 999px;
+  min-width: 28px;
+  min-height: 28px;
+  color: @lc_muted;
 }
-.lc-notebook > header > tabs > tab:hover { color: @lc_text; background-color: @lc_hover; }
-.lc-notebook > header > tabs > tab:checked { color: @lc_accent; border-bottom-color: @lc_accent; }
+.lc-dialog headerbar windowcontrols button:hover {
+  background-color: @lc_surface2;
+  color: @lc_text;
+}
+/* Outlined accent circles in the providers header (help and add). */
+.lc-dialog headerbar button.lc-outline-circle {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  background-image: none;
+  background-color: transparent;
+  border: 1px solid @lc_accent_border;
+  border-radius: 999px;
+  color: @lc_accent;
+}
+.lc-dialog headerbar button.lc-outline-circle:hover {
+  background-image: none;
+  background-color: @lc_accent_tint;
+}
+.lc-dialog headerbar button.lc-outline-circle image { color: @lc_accent; }
+.lc-dialog .dialog-body { padding: 16px; }
+.lc-dialog-scroll { background-color: @lc_sidebar; }
 
-/* ------------------------------------------------------- markdown body */
-.lc-body { line-height: 1.4; }
-.lc-code-block { padding: 0; }
-.lc-code-block .lc-section { margin-bottom: 1px; }
-textview.lc-code { font-size: 12px; }
+/* Markdown code blocks inside chat. */
+.lc-code-block {
+  background-color: @lc_bg;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: @lc_text;
+}
+.lc-code-block-header {
+  color: @lc_muted2; font-size: 10.5px;
+  font-family: "JetBrains Mono", monospace;
+}
 
-/* Thin, unobtrusive scrollbars: content is the focus, not the chrome. */
-scrollbar { background: transparent; border: none; }
+/* ==================================================== model selector */
+popover.lc-model-popover {
+  box-shadow: none;
+  background-color: transparent;
+}
+popover.lc-model-popover > contents {
+  background-color: @lc_sidebar;
+  border: 1px solid @lc_border_strong;
+  border-radius: 20px;
+  padding: 0;
+  box-shadow: none;
+}
+.lc-model-popover-inner { padding: 14px; }
+.lc-model-title { font-size: 16px; font-weight: 700; color: @lc_text; }
+.lc-model-subtitle { font-size: 11.5px; color: @lc_muted; }
+
+/* Horizontal provider pill tabs. */
+.lc-provider-tabs {
+  background-color: transparent;
+  border-bottom: 1px solid @lc_border;
+  padding: 2px 0 8px 0;
+}
+button.lc-provider-tab {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 12px;
+  color: @lc_muted;
+  font-size: 12px;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+button.lc-provider-tab:hover { color: @lc_text; border-color: @lc_border_strong; }
+button.lc-provider-tab:checked {
+  background-color: @lc_accent_tint;
+  border-color: @lc_accent_border;
+  color: @lc_accent;
+}
+
+/* Selectable model cards. */
+.lc-model-card {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 14px;
+  padding: 10px 12px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.lc-model-icon {
+  min-width: 36px; min-height: 36px;
+  border-radius: 12px;
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  font-size: 13px;
+  font-weight: 700;
+  color: @lc_text;
+}
+.lc-model-icon.anthropic { color: #d9a066; }
+.lc-model-icon.gemini { color: #6cb6ff; }
+.lc-model-icon.ollama { color: #b0a08e; }
+.lc-model-icon.openai { color: #6fbf73; }
+.lc-model-card:hover { border-color: @lc_border_strong; background-color: @lc_surface2; }
+.lc-model-card.lc-model-card-selected {
+  background-color: @lc_accent_tint;
+  border: 1.5px solid @lc_accent_border;
+}
+.lc-model-name { font-size: 13.5px; font-weight: 700; color: @lc_text; }
+.lc-model-id { font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: @lc_muted2; }
+.lc-model-ctx { font-size: 10.5px; color: @lc_muted; }
+.lc-model-wrench { color: @lc_info; font-size: 11px; }
+.lc-model-radio {
+  min-width: 18px; min-height: 18px;
+  border: 1.5px solid @lc_border_strong;
+  border-radius: 999px;
+  background-color: transparent;
+}
+.lc-model-card-selected .lc-model-radio {
+  border-color: @lc_accent;
+  background-color: @lc_accent;
+  color: @lc_dark_text;
+}
+
+/* ==================================================== providers screen */
+.lc-providers { background-color: @lc_bg; }
+.lc-providers-head { padding: 14px 18px; }
+.lc-providers-title { font-size: 18px; font-weight: 700; color: @lc_text; }
+.lc-providers-sub { font-size: 12px; color: @lc_muted; }
+
+.lc-banner {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+.lc-banner-label { font-size: 12.5px; font-weight: 600; color: @lc_text; }
+.lc-banner-text { font-size: 11.5px; color: @lc_muted; }
+
+.lc-provider-card {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 16px;
+  padding: 12px 14px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.lc-provider-card:hover { border-color: @lc_border_strong; }
+.lc-provider-card.lc-provider-card-selected {
+  background-color: @lc_accent_tint;
+  border: 1.5px solid @lc_accent_border;
+}
+.lc-provider-name { font-size: 14px; font-weight: 700; color: @lc_text; }
+.lc-provider-model { font-family: "JetBrains Mono", monospace; font-size: 11px; color: @lc_muted; }
+.lc-provider-model.lc-none { color: @lc_err; }
+
+.lc-status-badge {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.lc-status-badge.hosted { color: @lc_ok; border-color: rgba(111, 191, 115, 0.5); }
+.lc-status-badge.own-key { color: @lc_accent; border-color: @lc_accent_border; }
+.lc-status-badge.local { color: @lc_info; border-color: rgba(74, 159, 224, 0.5); }
+
+/* Provider type chips in the add form. */
+button.lc-type-chip {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  min-height: 44px;
+  min-width: 88px;
+  padding: 6px 10px;
+  color: @lc_muted;
+  font-size: 12px;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+button.lc-type-chip:hover { border-color: @lc_border_strong; color: @lc_text; }
+button.lc-type-chip:checked {
+  background-color: @lc_accent_tint;
+  border: 1.5px solid @lc_accent_border;
+  color: @lc_accent;
+}
+button.lc-type-chip .anthropic { color: #d9a066; }
+button.lc-type-chip .gemini { color: #6cb6ff; }
+button.lc-type-chip .ollama { color: #b0a08e; }
+button.lc-type-chip .openai { color: @lc_ok; }
+.lc-chip-check { color: @lc_accent; }
+.lc-chip-lock { color: @lc_muted2; }
+.lc-form-card {
+  background-color: @lc_surface;
+  border: 1px solid @lc_border;
+  border-radius: 16px;
+  padding: 14px;
+}
+.lc-form-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: @lc_muted; }
+.lc-form-hint { font-size: 11px; color: @lc_muted2; }
+.lc-link { color: @lc_accent; font-size: 11.5px; }
+.lc-lock-badge { color: @lc_muted2; font-size: 10px; }
+
+/* Provider icon tile, shared by the list and the add form. */
+.lc-provider-tile {
+  min-width: 44px; min-height: 44px;
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 12px;
+  color: @lc_text;
+}
+.lc-provider-tile.lc-tile-lg { min-width: 48px; min-height: 48px; border-radius: 14px; }
+.lc-provider-tile.anthropic { color: #d9a066; }
+.lc-provider-tile.gemini { color: #6cb6ff; }
+.lc-provider-tile.ollama { color: #b0a08e; }
+.lc-provider-tile.openai { color: @lc_ok; }
+.lc-provider-tile.local { color: @lc_info; }
+.lc-provider-tile label { color: @lc_text; font-size: 15px; font-weight: 700; }
+.lc-provider-tile.anthropic label { color: #d9a066; }
+.lc-provider-tile.gemini label { color: #6cb6ff; }
+.lc-provider-tile.ollama label { color: #b0a08e; }
+.lc-provider-tile.openai label { color: @lc_ok; }
+.lc-provider-tile.local label { color: @lc_info; }
+
+/* Sticky action bar at the foot of the add/edit form. */
+.lc-form-foot {
+  background-color: @lc_sidebar;
+  border-top: 1px solid @lc_border;
+  padding: 12px 18px;
+}
+.lc-form-foot button.lc-primary { min-height: 40px; padding: 0 20px; }
+
+/* Advanced section of the add form. */
+.lc-advanced { color: @lc_text; }
+.lc-advanced > title {
+  font-size: 12px;
+  color: @lc_muted;
+  padding: 4px 0;
+}
+.lc-advanced > title:hover { color: @lc_text; }
+
+/* ============================================================ scrollbars */
+scrollbar { background-color: transparent; border: none; }
 scrollbar slider {
-  min-width: 6px; min-height: 24px; border-radius: 999px;
-  background-color: #3a3a3a; border: none;
+  background-color: @lc_surface2;
+  border-radius: 999px;
+  min-width: 6px; min-height: 6px;
+  border: none;
 }
-scrollbar slider:hover { background-color: #4a4a4a; }
-scrollbar trough { background: transparent; }
+scrollbar slider:hover { background-color: @lc_border_strong; }
+scrollbar.horizontal slider { min-height: 6px; }
+scrollbar.vertical slider { min-width: 6px; }
+scrolledwindow undershoot.top, scrolledwindow undershoot.bottom,
+scrolledwindow undershoot.left, scrolledwindow undershoot.right {
+  background: none; box-shadow: none;
+}
 
-/* Respect reduced motion. */
-.reduced-motion .lc-working-dot { animation: none; }
-.reduced-motion * { transition: none; }
+/* ============================================================ men/other */
+popover, popover.menu > contents {
+  background-color: @lc_sidebar;
+  color: @lc_text;
+  border: 1px solid @lc_border_strong;
+  border-radius: 14px;
+}
+popover.menu modelbutton:hover { background-color: @lc_surface2; border-radius: 10px; }
+tooltip {
+  background-color: @lc_surface2;
+  color: @lc_text;
+  border: 1px solid @lc_border_strong;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+separator { background-color: @lc_border; min-width: 1px; min-height: 1px; }
+
+checkbutton check {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border_strong;
+  border-radius: 5px;
+  min-width: 16px; min-height: 16px;
+}
+checkbutton check:checked { background-color: @lc_accent; border-color: @lc_accent; color: @lc_dark_text; }
+switch { background-color: @lc_surface2; border: 1px solid @lc_border; border-radius: 999px; }
+switch:checked { background-color: @lc_accent; border-color: @lc_accent; }
+switch slider { background-color: @lc_text; border-radius: 999px; }
+
+/* ------------------------------------------------------- reduced motion */
+/* GTK's CSS dialect has no @media queries, so motion is kept to short
+   150-200ms transitions that remain unobtrusive without a media query. */

@@ -46,13 +46,12 @@ impl ToolChip {
     ) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 3);
         root.add_css_class("lc-tool-chip-root");
-        root.set_halign(gtk::Align::Start);
-        root.set_margin_start(2);
+        root.set_halign(gtk::Align::Fill);
 
         let header = gtk::Button::new();
-        header.add_css_class("lc-tool-chip");
+        header.add_css_class("lc-tool-row");
         header.set_has_frame(false);
-        header.set_halign(gtk::Align::Start);
+        header.set_halign(gtk::Align::Fill);
         header.set_tooltip_text(Some(call_id));
 
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -64,24 +63,28 @@ impl ToolChip {
         glyph.add_css_class("lc-tool-glyph");
         let label = gtk::Label::new(None);
         label.add_css_class("lc-tool-label");
-        label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-        label.set_max_width_chars(46);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label.set_hexpand(true);
         label.set_xalign(0.0);
 
         row.append(&spinner);
         row.append(&glyph);
         row.append(&label);
+        if tool == "bash" {
+            let chevron = gtk::Label::new(Some("\u{203a}"));
+            chevron.add_css_class("lc-edit-chevron");
+            row.append(&chevron);
+        }
         header.set_child(Some(&row));
         root.append(&header);
 
         let notes = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        notes.set_margin_start(18);
         root.append(&notes);
 
         // Only `bash` exposes its command and output, and only after a click.
         let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
         body.add_css_class("lc-tool-chip-body");
-        body.set_margin_start(18);
+        body.set_margin_start(0);
         body.set_visible(false);
         let output = gtk::Label::new(None);
         if tool == "bash" {
@@ -272,15 +275,18 @@ impl ToolChip {
             ToolStatus::Pending | ToolStatus::Running => {
                 self.glyph.set_text("\u{270e}");
                 self.glyph.remove_css_class("lc-error");
+                self.glyph.remove_css_class("lc-ok");
                 self.label.set_text(&progressive_label(&self.tool, &base));
             }
             ToolStatus::Done => {
                 self.glyph.set_text("\u{2713}");
                 self.glyph.remove_css_class("lc-error");
+                self.glyph.add_css_class("lc-ok");
                 self.label.set_text(&base);
             }
             ToolStatus::Failed | ToolStatus::Denied => {
                 self.glyph.set_text("\u{2717}");
+                self.glyph.remove_css_class("lc-ok");
                 self.glyph.add_css_class("lc-error");
                 let suffix = if self.status.get() == ToolStatus::Denied {
                     "denied"

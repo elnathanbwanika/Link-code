@@ -14,6 +14,7 @@ pub mod anthropic;
 pub mod discovery;
 pub mod error;
 pub mod gemini;
+pub mod keypool;
 pub mod ollama;
 pub mod openai;
 pub mod pricing;
@@ -25,10 +26,13 @@ pub mod toolcall;
 pub mod types;
 
 pub use error::{LinkModelError, ModelResult};
+pub use keypool::{KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, RotatingProvider};
 pub use openai::sanitize_api_key;
 pub use provider::{ModelProvider, ModelStream, ProviderFactory};
 pub use proxy::{ProxyProtocol, ProxySettings};
-pub use registry::{ModelConfig, ModelRegistry, ModelRole, ModelStats, ProviderKind};
+pub use registry::{
+    ApiKeyEntry, ApiKeyPool, ModelConfig, ModelRegistry, ModelRole, ModelStats, ProviderKind,
+};
 pub use types::{
     Capabilities, ChatMessage, ChatRequest, FinishReason, ImageAttachment, ModelInfo, Role,
     StreamEvent, ToolCallRequest, Usage,

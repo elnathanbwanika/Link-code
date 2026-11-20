@@ -102,6 +102,22 @@ impl LinkModelError {
         }
     }
 
+    /// Whether this failure means the credential is used up, rather than the
+    /// request being malformed or the endpoint being unreachable.
+    ///
+    /// This is the signal the key-pool provider uses to move to the next key:
+    /// rejected credentials (401/403), rate limits (429) and payment/quota
+    /// failures (402, or a body that talks about quota, credits or billing).
+    pub fn is_key_exhaustion(&self) -> bool {
+        match self {
+            LinkModelError::Auth { .. } | LinkModelError::RateLimit { .. } => true,
+            LinkModelError::Http { status, body, .. } => {
+                *status == 402 || looks_like_key_exhaustion(body)
+            }
+            _ => false,
+        }
+    }
+
     pub fn cancelled() -> Self {
         LinkModelError::Cancelled
     }
@@ -157,8 +173,35 @@ pub fn looks_like_context_overflow(body: &str) -> bool {
     .any(|needle| lowered.contains(needle))
 }
 
-fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+/// Phrases providers use when a key has no quota or credit left. They often
+/// arrive as a generic 400/403 rather than 429, so the body is the only signal.
+pub fn looks_like_key_exhaustion(body: &str) -> bool {
+    let lowered = body.to_ascii_lowercase();
+    [
+        "insufficient_quota",
+        "insufficient quota",
+        "quota exceeded",
+        "quota_exceeded",
+        "exceeded your current quota",
+        "usage limit",
+        "usage_limit",
+        "credit balance",
+        "credit_balance",
+        "out of credits",
+        "no credits",
+        "billing",
+        "payment required",
+        "account is out of",
+        "key has been revoked",
+        "invalid api key",
+        "incorrect api key",
+        "api key not valid",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
     if let Ok(seconds) = value.trim().parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }

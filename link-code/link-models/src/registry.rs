@@ -198,6 +198,137 @@ impl ModelRole {
     }
 }
 
+/// One API key stored for a base URL.
+///
+/// The key material itself never appears here: it lives in the OS keyring (see
+/// `link_core::secrets`). This record only keeps the non-secret metadata needed
+/// to show the key list, pick an active key and skip keys that ran out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApiKeyEntry {
+    /// Stable id used to look the secret up for this key.
+    pub id: String,
+    /// Human label, e.g. `Key 1` or a note the user typed.
+    pub label: String,
+    /// True once the provider rejected or exhausted this key. It is skipped
+    /// until another successful request proves it usable again.
+    pub exhausted: bool,
+    pub exhausted_at: Option<DateTime<Utc>>,
+}
+
+impl Default for ApiKeyEntry {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            label: String::new(),
+            exhausted: false,
+            exhausted_at: None,
+        }
+    }
+}
+
+/// Every API key that belongs to one base URL.
+///
+/// Keys are scoped to the URL rather than to a model configuration: two models
+/// served by the same endpoint share one pool and use the same active key.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApiKeyPool {
+    pub keys: Vec<ApiKeyEntry>,
+    /// Index of the key currently in use. Always clamped into `keys`.
+    pub active: usize,
+}
+
+impl ApiKeyPool {
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// Index of the key requests should use: the active one when it is still
+    /// usable, otherwise the first healthy key, otherwise the active/first key
+    /// (all keys exhausted, so the next request probes them again).
+    pub fn effective_active(&self) -> Option<usize> {
+        if self.keys.is_empty() {
+            return None;
+        }
+        let active = self.active.min(self.keys.len() - 1);
+        if !self.keys[active].exhausted {
+            Some(active)
+        } else {
+            self.keys
+                .iter()
+                .position(|key| !key.exhausted)
+                .or(Some(active))
+        }
+    }
+
+    pub fn active_entry(&self) -> Option<&ApiKeyEntry> {
+        self.effective_active().map(|index| &self.keys[index])
+    }
+
+    /// Keep `active` inside the vector after a removal.
+    pub fn clamp(&mut self) {
+        if self.keys.is_empty() {
+            self.active = 0;
+        } else {
+            self.active = self.active.min(self.keys.len() - 1);
+        }
+    }
+
+    pub fn mark_exhausted(&mut self, key_id: &str, at: DateTime<Utc>) -> bool {
+        let Some(index) = self.keys.iter().position(|key| key.id == key_id) else {
+            return false;
+        };
+        let changed = !self.keys[index].exhausted;
+        self.keys[index].exhausted = true;
+        self.keys[index].exhausted_at = Some(at);
+        self.active = self.next_available(index);
+        changed
+    }
+
+    /// The next healthy key after `from`, wrapping around. When every key is
+    /// exhausted, advance one position so a retry still probes another key.
+    pub fn next_available(&self, from: usize) -> usize {
+        if self.keys.is_empty() {
+            return 0;
+        }
+        let len = self.keys.len();
+        for step in 1..=len {
+            let index = (from + step) % len;
+            if !self.keys[index].exhausted {
+                return index;
+            }
+        }
+        (from + 1) % len
+    }
+
+    pub fn mark_usable(&mut self, key_id: &str) -> bool {
+        let Some(index) = self.keys.iter().position(|key| key.id == key_id) else {
+            return false;
+        };
+        let changed = self.keys[index].exhausted || self.keys[index].exhausted_at.is_some();
+        self.keys[index].exhausted = false;
+        self.keys[index].exhausted_at = None;
+        changed
+    }
+
+    pub fn reset_exhausted(&mut self) -> bool {
+        let mut changed = false;
+        for key in &mut self.keys {
+            if key.exhausted || key.exhausted_at.is_some() {
+                key.exhausted = false;
+                key.exhausted_at = None;
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
 /// Cumulative usage for one model, shown on its card.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -344,6 +475,15 @@ impl ModelConfig {
         self.provider.requires_api_key(&self.base_url)
     }
 
+    /// Stable identifier for this endpoint's API-key pool.
+    ///
+    /// Two model configurations that point at the same normalised base URL
+    /// share the pool, which is what makes one key apply to every model on an
+    /// endpoint. An empty URL has no pool.
+    pub fn key_pool_id(&self) -> String {
+        normalize_base_url(self.provider, &self.base_url)
+    }
+
     /// Reset a field to the provider's defaults. Used by the "presets" button.
     pub fn apply_provider_preset(&mut self) {
         self.base_url = self.provider.default_base_url().to_string();
@@ -398,6 +538,10 @@ pub struct ModelRegistry {
     pub models: Vec<ModelConfig>,
     /// [`ModelRole::key`] -> [`ModelConfig::id`].
     pub roles: BTreeMap<String, String>,
+    /// Normalised base URL -> its API-key pool metadata. Key material stays in
+    /// the secret store; this only records ids, labels and active/exhausted
+    /// state so rotation survives a restart.
+    pub key_pools: BTreeMap<String, ApiKeyPool>,
 }
 
 impl Default for ModelRegistry {
@@ -406,6 +550,7 @@ impl Default for ModelRegistry {
             version: REGISTRY_FORMAT_VERSION,
             models: Vec::new(),
             roles: BTreeMap::new(),
+            key_pools: BTreeMap::new(),
         }
     }
 }
@@ -421,6 +566,7 @@ impl ModelRegistry {
             version: REGISTRY_FORMAT_VERSION,
             models,
             roles: BTreeMap::new(),
+            key_pools: BTreeMap::new(),
         };
             if let Some(first_id) = registry.models.first().map(|m| m.id.clone()) {
             registry.set_role(ModelRole::Chat, &first_id);
@@ -546,6 +692,9 @@ impl ModelRegistry {
         for model in &mut copy.models {
             model.has_api_key = false;
         }
+        // Pools are local state (and would point at ids whose secrets are not
+        // in the file). They are not part of a shareable registry.
+        copy.key_pools.clear();
         serde_json::to_string_pretty(&copy).unwrap_or_else(|_| "{}".to_string())
     }
 
@@ -570,6 +719,8 @@ impl ModelRegistry {
             }
             model.has_api_key = false;
         }
+        // Imported pools refer to secrets on another machine.
+        registry.key_pools.clear();
         registry.version = REGISTRY_FORMAT_VERSION;
         Ok(registry)
     }

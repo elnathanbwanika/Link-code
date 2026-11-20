@@ -46,7 +46,11 @@ pub struct AgentPanel {
     pub send_button: gtk::Button,
     pub stop_button: gtk::Button,
     pub mode_button: gtk::Button,
+    /// Model chip inside the composer; opens the model selector.
+    pub composer_model_button: gtk::Button,
     pub context_bar: gtk::ProgressBar,
+    /// Right-aligned token count beside the context meter.
+    pub context_label: gtk::Label,
     /// Compact task summary above the composer, with the full checklist in a
     /// popover. The checklist never takes height away from the conversation.
     pub tasks: Rc<TaskPanel>,
@@ -332,51 +336,75 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lc-agent");
 
-    // ---- panel header ---------------------------------------------------
-    let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    header.set_margin_start(8);
-    header.set_margin_end(8);
-    header.set_margin_top(6);
-    header.set_margin_bottom(4);
+    // ---- floating top row ----------------------------------------------
+    // A translucent strip over the conversation: sidebar toggle on the left,
+    // Browser + Terminal pill on the right. It floats so the chat itself gets
+    // the full height of the column.
+    let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    top_row.add_css_class("lc-agent-top");
+    top_row.set_valign(gtk::Align::Start);
+    top_row.set_halign(gtk::Align::Fill);
+    top_row.set_margin_start(8);
+    top_row.set_margin_end(8);
+    top_row.set_margin_top(6);
+    top_row.set_can_target(false);
 
-    let title = gtk::Label::new(Some("AGENT"));
-    title.add_css_class("lc-section");
-    title.set_xalign(0.0);
-    header.append(&title);
-
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    header.append(&spacer);
-
-    let new_session = gtk::Button::from_icon_name("list-add-symbolic");
-    new_session.add_css_class("lc-header-button");
-    new_session.set_tooltip_text(Some("New session (Ctrl+Shift+N)"));
+    let sidebar_toggle = gtk::Button::from_icon_name("sidebar-show-symbolic");
+    sidebar_toggle.add_css_class("lc-agent-toggle");
+    sidebar_toggle.set_tooltip_text(Some("Toggle sidebar (Ctrl+B)"));
     {
         let state = state.clone();
-        new_session.connect_clicked(move |_| crate::window::new_session(&state));
+        sidebar_toggle.connect_clicked(move |_| crate::window::toggle_sidebar(&state));
     }
-    header.append(&new_session);
+    top_row.append(&sidebar_toggle);
 
-    let history_button = gtk::Button::from_icon_name("document-open-recent-symbolic");
-    history_button.add_css_class("lc-header-button");
-    history_button.set_tooltip_text(Some("Session history"));
+    let top_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    top_spacer.set_hexpand(true);
+    top_spacer.set_can_target(false);
+    top_row.append(&top_spacer);
+
+    let tools = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    tools.add_css_class("lc-agent-tools");
+    let browser = tool_pill(
+        "applications-internet-symbolic",
+        "Browser",
+        "Open http://localhost:3000 in your browser",
+    );
     {
         let state = state.clone();
-        history_button.connect_clicked(move |_| {
-            if let Some(widgets) = state.widgets() {
-                crate::panels::sidebar::show_history(&state, &widgets.sidebar);
+        browser.connect_clicked(move |_| {
+            let result = gtk::gio::AppInfo::launch_default_for_uri(
+                "http://localhost:3000",
+                None::<&gtk::gio::AppLaunchContext>,
+            );
+            if result.is_err() {
+                state.toast("Could not launch a browser");
             }
         });
     }
-    header.append(&history_button);
-
-    root.append(&header);
+    tools.append(&browser);
+    let terminal_btn = tool_pill(
+        "utilities-terminal-symbolic",
+        "Terminal",
+        "Show the terminal (Ctrl+J)",
+    );
+    {
+        let state = state.clone();
+        terminal_btn.connect_clicked(move |_| {
+            if let Some(widgets) = state.widgets() {
+                widgets.bottom_root.set_visible(true);
+                widgets.bottom.focus_terminal();
+            }
+        });
+    }
+    tools.append(&terminal_btn);
+    top_row.append(&tools);
 
     // ---- message log ----------------------------------------------------
-    let chat_list = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    chat_list.set_margin_start(8);
-    chat_list.set_margin_end(8);
-    chat_list.set_margin_top(4);
+    let chat_list = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    chat_list.set_margin_start(12);
+    chat_list.set_margin_end(12);
+    chat_list.set_margin_top(46);
     chat_list.set_margin_bottom(8);
 
     let chat_scroll = gtk::ScrolledWindow::builder()
@@ -386,15 +414,14 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         .child(&chat_list)
         .build();
     chat_scroll.add_css_class("lc-conversation");
-    root.append(&chat_scroll);
 
     // ---- live activity --------------------------------------------------
     // One line that says what the agent is doing right now. It replaces
     // silence: every tool start, approval wait and failure is narrated here.
     let activity = gtk::Box::new(gtk::Orientation::Horizontal, 5);
-    activity.set_margin_start(8);
-    activity.set_margin_end(8);
-    activity.set_margin_bottom(3);
+    activity.set_margin_start(12);
+    activity.set_margin_end(12);
+    activity.set_margin_bottom(4);
     activity.set_visible(false);
     let activity_spinner = gtk::Spinner::new();
     activity_spinner.set_valign(gtk::Align::Center);
@@ -408,18 +435,16 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     activity_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     activity_label.set_max_width_chars(32);
     activity.append(&activity_label);
-    root.append(&activity);
 
     // ---- suggestion chips ----------------------------------------------
     // Vertical, full-width rows: a horizontal row of variable-length chips
     // used to set the window's *minimum* width, so three long suggestions
     // could stretch the whole window from 960px to over 1600px.
     let suggestions_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    suggestions_box.set_margin_start(8);
-    suggestions_box.set_margin_end(8);
-    suggestions_box.set_margin_bottom(4);
+    suggestions_box.set_margin_start(12);
+    suggestions_box.set_margin_end(12);
+    suggestions_box.set_margin_bottom(6);
     suggestions_box.set_visible(false);
-    root.append(&suggestions_box);
 
     // ---- composer -------------------------------------------------------
     let composer_area = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -437,30 +462,43 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     attachments_scroll.set_visible(false);
     composer_area.append(&attachments_scroll);
 
-    let context_bar = gtk::ProgressBar::new();
-    context_bar.add_css_class("lc-meter");
-    context_bar.set_show_text(false);
-    context_bar.set_fraction(0.0);
-    context_bar.set_tooltip_text(Some("Context window usage"));
-    composer_area.append(&context_bar);
-
     // The compact task bar sits directly above the input. The full checklist
     // is a popover, so it never changes the conversation's height.
     let tasks = Rc::new(TaskPanel::new(&root));
     composer_area.append(&tasks.menu);
 
-    let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    // Context usage: a hairline meter with a right-aligned token count.
+    let context_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    context_row.add_css_class("lc-context-row");
+    let context_bar = gtk::ProgressBar::new();
+    context_bar.add_css_class("lc-context-meter");
+    context_bar.set_show_text(false);
+    context_bar.set_fraction(0.0);
+    context_bar.set_hexpand(true);
+    context_bar.set_valign(gtk::Align::Center);
+    context_bar.set_tooltip_text(Some("Context window usage"));
+    context_row.append(&context_bar);
+    let context_label = gtk::Label::new(Some("0 / 0"));
+    context_label.add_css_class("lc-context-label");
+    context_label.add_css_class("lc-mono");
+    context_label.set_xalign(1.0);
+    context_row.append(&context_label);
+    composer_area.append(&context_row);
+
+    let composer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     composer.add_css_class("lc-composer");
 
     let input = gtk::TextView::new();
     input.set_wrap_mode(gtk::WrapMode::WordChar);
     input.set_accepts_tab(false);
-    input.set_top_margin(6);
-    input.set_bottom_margin(4);
-    input.set_left_margin(8);
-    input.set_right_margin(8);
+    input.set_top_margin(2);
+    input.set_bottom_margin(2);
+    input.set_left_margin(0);
+    input.set_right_margin(0);
     input.add_css_class("lc-input");
-    input.set_tooltip_text(Some("Enter to send \u{00b7} Shift+Enter for a new line \u{00b7} @ attaches a file"));
+    input.set_tooltip_text(Some(
+        "Enter to send \u{00b7} Shift+Enter for a new line \u{00b7} @ attaches a file",
+    ));
 
     let input_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -470,66 +508,100 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         .propagate_natural_height(true)
         .child(&input)
         .build();
-    composer.append(&input_scroll);
 
-    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    toolbar.set_margin_start(4);
-    toolbar.set_margin_end(4);
-    toolbar.set_margin_bottom(4);
+    let input_overlay = gtk::Overlay::new();
+    input_overlay.set_child(Some(&input_scroll));
+    let placeholder = gtk::Label::new(Some("Ask AI or enter a command..."));
+    placeholder.add_css_class("lc-composer-placeholder");
+    placeholder.set_halign(gtk::Align::Start);
+    placeholder.set_valign(gtk::Align::Start);
+    placeholder.set_margin_start(10);
+    placeholder.set_margin_top(10);
+    placeholder.set_can_target(false);
+    input_overlay.add_overlay(&placeholder);
+    composer.append(&input_overlay);
 
-    let attach = gtk::Button::from_icon_name("mail-attachment-symbolic");
-    attach.add_css_class("lc-header-button");
+    let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bar.add_css_class("lc-composer-bar");
+
+    let attach = gtk::Button::from_icon_name("list-add-symbolic");
+    attach.add_css_class("lc-plus");
     attach.set_tooltip_text(Some("Attach a workspace file (@)"));
     {
         let state = state.clone();
         attach.connect_clicked(move |_| attach_file(&state));
     }
-    toolbar.append(&attach);
+    bar.append(&attach);
 
-    let mode_button = gtk::Button::with_label("Ask");
-    mode_button.add_css_class("lc-ghost");
-    mode_button.add_css_class("lc-tiny");
-    mode_button.set_tooltip_text(Some("Permission mode \u{00b7} Shift+Tab"));
+    let composer_model_button = gtk::Button::new();
+    crate::widgets::set_button_text_for(
+        &composer_model_button,
+        &state.chat_model_label(),
+        18,
+        gtk::pango::EllipsizeMode::End,
+    );
+    composer_model_button.add_css_class("lc-model-chip");
+    composer_model_button.set_tooltip_text(Some("Select model"));
+    {
+        let state = state.clone();
+        composer_model_button.connect_clicked(move |button| {
+            crate::widgets::model_badge::show_picker(&state, button.upcast_ref());
+        });
+    }
+    bar.append(&composer_model_button);
+
+    let bar_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    bar_spacer.set_hexpand(true);
+    bar.append(&bar_spacer);
+
+    let mode_button = gtk::Button::with_label(state.mode().label());
+    mode_button.add_css_class("lc-mode-pill");
+    mode_button.set_tooltip_text(Some(state.mode().description()));
+    if state.mode() == PermissionMode::FullAuto {
+        mode_button.add_css_class("full-auto");
+    }
     {
         let state = state.clone();
         mode_button.connect_clicked(move |_| state.cycle_mode());
     }
-    toolbar.append(&mode_button);
+    bar.append(&mode_button);
 
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    toolbar.append(&spacer);
-
-    let stop_button = gtk::Button::with_label("Stop");
-    stop_button.add_css_class("lc-ghost");
-    stop_button.add_css_class("lc-danger");
+    let stop_button = gtk::Button::from_icon_name("media-playback-stop-symbolic");
+    stop_button.add_css_class("lc-stop");
+    stop_button.set_tooltip_text(Some("Stop the agent"));
     stop_button.set_visible(false);
     {
         let state = state.clone();
         stop_button.connect_clicked(move |_| stop(&state));
     }
-    toolbar.append(&stop_button);
+    bar.append(&stop_button);
 
-    let send_button = gtk::Button::with_label("Send");
-    send_button.add_css_class("lc-primary");
+    let send_button = gtk::Button::from_icon_name("go-next-symbolic");
+    send_button.add_css_class("lc-send");
+    send_button.set_tooltip_text(Some("Send (Enter)"));
     {
         let state = state.clone();
         send_button.connect_clicked(move |_| send_message(&state));
     }
-    toolbar.append(&send_button);
+    bar.append(&send_button);
 
-    composer.append(&toolbar);
+    composer.append(&bar);
     composer_area.append(&composer);
 
-    let hint = gtk::Label::new(Some("Enter sends \u{00b7} Shift+Enter newline \u{00b7} @ attaches"));
-    hint.add_css_class("lc-tiny");
-    hint.add_css_class("lc-disabled");
-    hint.set_xalign(0.0);
-    hint.set_margin_start(4);
-    hint.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    composer_area.append(&hint);
-
-    root.append(&composer_area);
+    // Keep the placeholder and the send state in step with the buffer.
+    {
+        let placeholder = placeholder.clone();
+        let send_button = send_button.clone();
+        input.buffer().connect_changed(move |buffer| {
+            let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
+            placeholder.set_visible(text.is_empty());
+            if text.trim().is_empty() {
+                send_button.remove_css_class("lc-send-active");
+            } else {
+                send_button.add_css_class("lc-send-active");
+            }
+        });
+    }
 
     // Enter sends, Shift+Enter inserts a newline; the configured `agent.send`
     // accelerator (Ctrl+Enter by default) sends too.
@@ -561,6 +633,18 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     }
     input.add_controller(key);
 
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    body.append(&chat_scroll);
+    body.append(&activity);
+    body.append(&suggestions_box);
+    body.append(&composer_area);
+
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&body));
+    overlay.add_overlay(&top_row);
+    overlay.set_vexpand(true);
+    root.append(&overlay);
+
     AgentPanel {
         root,
         chat_list,
@@ -572,12 +656,31 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         send_button,
         stop_button,
         mode_button,
+        composer_model_button,
         context_bar,
+        context_label,
         tasks,
         suggestions_box,
         attachments_box,
         attachments_scroll,
     }
+}
+
+/// Small icon + text button used inside the floating Browser/Terminal pill.
+fn tool_pill(icon: &str, label: &str, tooltip: &str) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.set_tooltip_text(Some(tooltip));
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+    row.set_margin_start(9);
+    row.set_margin_end(10);
+    let image = gtk::Image::from_icon_name(icon);
+    image.set_pixel_size(15);
+    row.append(&image);
+    let text = gtk::Label::new(Some(label));
+    text.add_css_class("lc-tiny");
+    row.append(&text);
+    button.set_child(Some(&row));
+    button
 }
 
 // ---------------------------------------------------------------------------
@@ -602,10 +705,16 @@ pub fn refresh_composer(state: &Rc<UiState>) {
     let busy = state.busy.get();
     widgets.send_button.set_visible(!busy);
     widgets.stop_button.set_visible(busy);
-    widgets.mode_button.set_label(state.mode().label());
+    let mode = state.mode();
+    widgets.mode_button.set_label(mode.label());
     widgets
         .mode_button
-        .set_tooltip_text(Some(state.mode().description()));
+        .set_tooltip_text(Some(mode.description()));
+    if mode == PermissionMode::FullAuto {
+        widgets.mode_button.add_css_class("full-auto");
+    } else {
+        widgets.mode_button.remove_css_class("full-auto");
+    }
 }
 
 pub fn stop(state: &Rc<UiState>) {
@@ -657,6 +766,18 @@ fn set_activity(widgets: &crate::state::Widgets, text: &str, css: &str) {
 fn clear_activity(widgets: &crate::state::Widgets) {
     widgets.activity_spinner.stop();
     widgets.activity.set_visible(false);
+}
+
+/// Compact token counts for the context label: `90.3k / 1.0M`.
+fn human_tokens(value: usize) -> String {
+    let value = value as f64;
+    if value >= 1_000_000.0 {
+        format!("{:.1}M", value / 1_000_000.0)
+    } else if value >= 1_000.0 {
+        format!("{:.1}k", value / 1_000.0)
+    } else {
+        format!("{}", value as usize)
+    }
 }
 
 fn attach_file(state: &Rc<UiState>) {
@@ -1276,6 +1397,14 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
                 0.0
             };
             widgets.context_bar.set_fraction(fraction);
+            widgets.context_label.set_text(&format!(
+                "{} / {}",
+                human_tokens(used_tokens),
+                human_tokens(max_tokens)
+            ));
+            widgets
+                .context_label
+                .set_tooltip_text(Some(&format!("{used_tokens} / {max_tokens} tokens")));
             widgets.context_bar.remove_css_class("lc-meter-warn");
             widgets.context_bar.remove_css_class("lc-meter-full");
             if fraction > 0.9 {

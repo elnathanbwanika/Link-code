@@ -428,10 +428,10 @@ fn draw_gutter(
 ) {
     // Paint the column background first: DrawingArea does not draw a theme
     // background on its own, and a transparent gutter would show scroll noise.
-    cr.set_source_rgba(0.0, 0.0, 0.0, 1.0);
+    cr.set_source_rgba(42.0 / 255.0, 41.0 / 255.0, 40.0 / 255.0, 1.0);
     cr.rectangle(0.0, 0.0, width as f64, height as f64);
     let _ = cr.fill();
-    cr.set_source_rgba(0.137, 0.137, 0.137, 1.0);
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.06);
     cr.rectangle((width - 1) as f64, 0.0, 1.0, height as f64);
     let _ = cr.fill();
 
@@ -476,17 +476,17 @@ fn draw_gutter(
             } else {
                 4.0
             };
-            cr.set_source_rgba(0.55, 0.55, 0.55, 1.0);
+            cr.set_source_rgba(155.0 / 255.0, 148.0 / 255.0, 140.0 / 255.0, 1.0);
             cr.move_to(x, top + (line_height as f64 + 8.0) / 2.0);
             let _ = cr.show_text(&number);
 
             if let Some(kind) = kinds.get(&line).copied() {
                 match kind {
                     DiffKind::Added => {
-                        cr.set_source_rgba(46.0 / 255.0, 160.0 / 255.0, 67.0 / 255.0, 1.0)
+                        cr.set_source_rgba(111.0 / 255.0, 191.0 / 255.0, 115.0 / 255.0, 1.0)
                     }
                     DiffKind::Removed => {
-                        cr.set_source_rgba(248.0 / 255.0, 81.0 / 255.0, 73.0 / 255.0, 1.0)
+                        cr.set_source_rgba(229.0 / 255.0, 83.0 / 255.0, 75.0 / 255.0, 1.0)
                     }
                 }
                 cr.rectangle(0.0, top, 3.0, line_height as f64);

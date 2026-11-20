@@ -45,6 +45,15 @@ impl BottomPanel {
         self.terminal.borrow_mut().start(&cwd, &shell);
     }
 
+    /// Ensure a shell is running and type a command into it.
+    pub fn run_in_terminal(&self, state: &UiState, command: &str) {
+        let running = self.terminal.borrow().session.is_some();
+        if !running {
+            self.restart(state);
+        }
+        self.terminal.borrow_mut().send(command.as_bytes());
+    }
+
     pub fn clear_terminal(&self) {
         let terminal = self.terminal.borrow();
         if terminal.session.is_some() {

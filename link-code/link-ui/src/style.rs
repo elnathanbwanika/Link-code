@@ -55,9 +55,9 @@ pub const FONTS: &[(&str, &[u8])] = &[
 /// The Link Code logo mark, used in the header bar and as the app icon.
 pub const LOGO_SVG: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#000000"/>
-  <path d="M32 12 L44 34 L38 34 L38 52 L26 52 L26 34 L20 34 Z" fill="#ff6600"/>
-  <rect x="18" y="20" width="28" height="5" rx="2.5" fill="#ff6600" opacity="0.55"/>
+  <rect width="64" height="64" rx="14" fill="#252524"/>
+  <path d="M32 12 L44 34 L38 34 L38 52 L26 52 L26 34 L20 34 Z" fill="#E8927C"/>
+  <rect x="18" y="20" width="28" height="5" rx="2.5" fill="#E8927C" opacity="0.55"/>
 </svg>
 "##;
 

@@ -151,7 +151,9 @@ pub struct Widgets {
     pub stop_button: gtk::Button,
     pub mode_button: gtk::Button,
     pub model_button: gtk::Button,
+    pub composer_model_button: gtk::Button,
     pub context_bar: gtk::ProgressBar,
+    pub context_label: gtk::Label,
     pub tasks: Rc<crate::panels::agent::TaskPanel>,
     pub suggestions_box: gtk::Box,
     pub attachments_box: gtk::Box,
@@ -370,6 +372,12 @@ impl UiState {
                 24,
                 gtk::pango::EllipsizeMode::End,
             );
+            crate::widgets::set_button_text_for(
+                &widgets.composer_model_button,
+                &label,
+                18,
+                gtk::pango::EllipsizeMode::End,
+            );
             let tooltip = self
                 .chat_model()
                 .map(|model| {
@@ -417,10 +425,10 @@ impl UiState {
             widgets.status_mode.set_tooltip_text(Some(mode.description()));
             if mode == PermissionMode::FullAuto {
                 widgets.status_mode.add_css_class("lc-error");
-                widgets.mode_button.add_css_class("lc-error");
+                widgets.mode_button.add_css_class("full-auto");
             } else {
                 widgets.status_mode.remove_css_class("lc-error");
-                widgets.mode_button.remove_css_class("lc-error");
+                widgets.mode_button.remove_css_class("full-auto");
             }
         }
     }

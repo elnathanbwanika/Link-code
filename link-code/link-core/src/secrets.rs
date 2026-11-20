@@ -17,14 +17,24 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use link_models::registry::{ApiKeyEntry, ModelRegistry};
+
 use crate::error::Result;
 
 /// Namespace prefix used for every Link Code secret.
 pub const KEY_PREFIX: &str = "model:";
 
+/// Namespace prefix for keys that belong to a base URL's key pool.
+pub const KEY_POOL_PREFIX: &str = "keypool:";
+
 /// Secret lookup key for a model configuration id.
 pub fn key_for(model_id: &str) -> String {
     format!("{KEY_PREFIX}{model_id}")
+}
+
+/// Secret lookup key for one key in a base-URL pool.
+pub fn pool_key_for(pool_id: &str, key_id: &str) -> String {
+    format!("{KEY_POOL_PREFIX}{pool_id}|{key_id}")
 }
 
 /// Abstract keyring. Implementations must never persist plaintext to disk.
@@ -44,6 +54,82 @@ pub trait SecretStore: Send + Sync {
     fn delete_model_key(&self, model_id: &str) -> Result<()> {
         self.delete(&key_for(model_id))
     }
+    /// One key from a base-URL pool.
+    fn get_pool_key(&self, pool_id: &str, key_id: &str) -> Option<String> {
+        self.get(&pool_key_for(pool_id, key_id))
+    }
+    fn set_pool_key(&self, pool_id: &str, key_id: &str, value: &str) -> Result<()> {
+        self.set(&pool_key_for(pool_id, key_id), value)
+    }
+    fn delete_pool_key(&self, pool_id: &str, key_id: &str) -> Result<()> {
+        self.delete(&pool_key_for(pool_id, key_id))
+    }
+}
+
+/// Move keys stored by older builds (one per model id) into the per-base-URL
+/// pools.
+///
+/// Earlier versions held `model:<id>`. The multi-key design scopes keys to a
+/// normalised base URL, so every legacy key is copied into its model's pool,
+/// then the old entry is removed. Running this repeatedly is safe: an existing
+/// pool entry with the same secret is reused instead of duplicated.
+///
+/// Returns true when anything changed, so the caller can rewrite `models.json`.
+pub fn migrate_model_keys(registry: &mut ModelRegistry, store: &dyn SecretStore) -> bool {
+    let mut changed = false;
+    for model in &registry.models {
+        let Some(raw) = store.get_model_key(&model.id) else {
+            continue;
+        };
+        let key = link_models::sanitize_api_key(&raw);
+        if key.is_empty() {
+            let _ = store.delete_model_key(&model.id);
+            changed = true;
+            continue;
+        }
+        let pool_id = model.key_pool_id();
+        if pool_id.is_empty() {
+            continue;
+        }
+
+        let pool = registry.key_pools.entry(pool_id.clone()).or_default();
+        let already_present = pool.keys.iter().any(|entry| {
+            store
+                .get_pool_key(&pool_id, &entry.id)
+                .map(|stored| link_models::sanitize_api_key(&stored))
+                .as_deref()
+                == Some(key.as_str())
+        });
+        if !already_present {
+            let key_id = uuid::Uuid::new_v4().to_string();
+            match store.set_pool_key(&pool_id, &key_id, &key) {
+                Ok(()) => {
+                    let label = format!("Key {}", pool.keys.len() + 1);
+                    pool.keys.push(ApiKeyEntry {
+                        id: key_id,
+                        label,
+                        exhausted: false,
+                        exhausted_at: None,
+                    });
+                    changed = true;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        model = %model.id,
+                        "could not migrate an API key into its base-URL pool"
+                    );
+                    continue;
+                }
+            }
+        }
+        if store.delete_model_key(&model.id).is_ok() {
+            changed = true;
+        }
+    }
+    // A failed migration may have created an empty placeholder.
+    registry.key_pools.retain(|_, pool| !pool.is_empty());
+    changed
 }
 
 /// Session-only store. Used by tests and as the fallback when no keyring is
