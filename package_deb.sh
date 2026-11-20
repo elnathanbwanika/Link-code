@@ -3,7 +3,7 @@
 set -euo pipefail
 
 BINARY=/workspaces/Link-code/link-code/target/release/link-code
-VERSION=1.0.28
+VERSION=1.0.29
 ARCH=amd64
 PKGNAME=link-code
 PKGDIR=/tmp/link-code-deb
