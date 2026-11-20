@@ -14,6 +14,7 @@ use std::sync::{Arc, OnceLock};
 use gtk::prelude::*;
 use link_core::agent::AgentHandle;
 use link_core::config::{config_dir, Config, ConfigStore};
+use link_core::event::TodoItem;
 use link_core::permission::PermissionMode;
 use link_core::secrets::{self, SecretStore};
 use link_core::session::{Session, SessionStore};
@@ -731,9 +732,67 @@ impl UiState {
             message.thinking = Some(thinking);
         }
         session.push(message);
-        session.touch();
+        // Remember what was asked and how far the work got, so reopening this
+        // session continues the task instead of starting it again.
+        let request = session
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == link_core::session::StoredRole::User)
+            .map(|message| one_line(&message.content, 220))
+            .unwrap_or_default();
+        let outcome = one_line(&session.messages.last().map(|m| m.content.as_str()).unwrap_or(""), 700);
+        let note = if request.is_empty() {
+            format!("Last reply: {outcome}")
+        } else {
+            format!("Request: {request}\nOutcome: {outcome}")
+        };
+        session.set_resume_note(note);
         drop(slot);
         self.save_session();
+    }
+
+    /// Persist the agent's live checklist with the conversation.
+    pub fn set_session_todos(&self, items: Vec<TodoItem>) {
+        let changed = {
+            let mut slot = self.session.borrow_mut();
+            match slot.as_mut() {
+                Some(session) => {
+                    session.set_todos(items);
+                    true
+                }
+                None => false,
+            }
+        };
+        if changed {
+            self.save_session();
+        }
+    }
+
+    /// Remember a file the agent changed while working on this session.
+    pub fn record_session_edit(&self, path: &Path) {
+        let relative = self.relative_to_workspace(path);
+        let changed = {
+            let mut slot = self.session.borrow_mut();
+            match slot.as_mut() {
+                Some(session) => {
+                    session.record_edited_file(&relative);
+                    true
+                }
+                None => false,
+            }
+        };
+        if changed {
+            self.save_session();
+        }
+    }
+
+    /// The system-prompt section that resumes a reopened conversation.
+    pub fn session_resume_prompt(&self) -> Option<String> {
+        self.session
+            .borrow()
+            .as_ref()
+            .and_then(|session| session.resume_prompt())
     }
 
     pub fn push_user_message(&self, text: &str) {
@@ -777,4 +836,15 @@ impl UiState {
     pub fn take_attachments(&self) -> Vec<String> {
         std::mem::take(&mut *self.attachments.borrow_mut())
     }
+}
+
+/// Collapse whitespace and cut to `limit` characters, for resume notes.
+fn one_line(text: &str, limit: usize) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= limit {
+        return compact;
+    }
+    let mut out: String = compact.chars().take(limit.saturating_sub(1)).collect();
+    out.push('\u{2026}');
+    out
 }

@@ -186,7 +186,7 @@ impl TaskPanel {
     }
 
     /// Rebuild the bar and checklist from the current plan.
-    fn render(&self, items: &[TodoItem]) {
+    pub fn render(&self, items: &[TodoItem]) {
         let generation = self.generation.get() + 1;
         self.generation.set(generation);
         *self.items.borrow_mut() = items.to_vec();
@@ -945,14 +945,19 @@ knowledge in:
 8. Never stop mid-task. If you reach an iteration limit, continue automatically.";
 
     let effective_system_prompt: Option<String> = {
-        let mut parts: Vec<&str> = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
         if let Some(ref user_override) = model.system_prompt {
             let trimmed = user_override.trim();
             if !trimmed.is_empty() {
-                parts.push(trimmed);
+                parts.push(trimmed.to_string());
             }
         }
-        parts.push(SKILLS_ADDENDUM);
+        parts.push(SKILLS_ADDENDUM.to_string());
+        // A reopened conversation carries its checklist and stopping point, so
+        // the model continues instead of repeating finished work.
+        if let Some(resume) = state.session_resume_prompt() {
+            parts.push(resume);
+        }
         Some(parts.join("\n\n"))
     };
 
@@ -1149,6 +1154,9 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
                 set_activity(&widgets, &format!("⚠ Interrupted while editing {path}"), "lc-error");
             } else {
                 set_activity(&widgets, &format!("✎ Wrote {path}"), "lc-dim");
+                // Record the changed file in the session's work log so a
+                // resumed turn does not rewrite work that is already done.
+                state.record_session_edit(std::path::Path::new(&path));
             }
         }
         AgentEvent::ToolRequested {
@@ -1377,6 +1385,9 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
         }
         AgentEvent::TodosUpdated { items } => {
             widgets.tasks.render(&items);
+            // Keep the checklist in the saved session so a reopened
+            // conversation knows exactly which steps are already done.
+            state.set_session_todos(items);
         }
         AgentEvent::SuggestionShown { .. } => {}
         AgentEvent::SuggestionsReady { items, .. } => {

@@ -1170,3 +1170,72 @@ switch slider { background-color: @lc_text; border-radius: 999px; }
 /* ------------------------------------------------------- reduced motion */
 /* GTK's CSS dialect has no @media queries, so motion is kept to short
    150-200ms transitions that remain unobtrusive without a media query. */
+
+/* =============================================================== git panel */
+.lc-git { background-color: @lc_bg; }
+.lc-git-side {
+  background-color: @lc_sidebar;
+  border-right: 1px solid @lc_border;
+}
+.lc-git-main { background-color: @lc_bg; }
+.lc-git-repos-head { padding-top: 6px; }
+.lc-git-changes-head { padding-top: 2px; }
+.lc-git-clone-row { padding-top: 4px; }
+.lc-git-commit-row { padding-top: 2px; }
+
+/* Compact controls: the tab lives inside a short bottom panel. */
+.lc-git entry.lc-input, .lc-git searchentry.lc-filter {
+  min-height: 26px;
+  padding: 2px 8px;
+  border-radius: 9px;
+}
+.lc-git searchentry.lc-filter { font-size: 10px; }
+.lc-git passwordentry {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
+  border-radius: 9px;
+  min-height: 26px;
+  color: @lc_text;
+}
+.lc-git passwordentry:focus-within {
+  border-color: @lc_accent_border;
+  outline: 2px solid @lc_accent_border;
+  outline-offset: -2px;
+}
+.lc-git passwordentry text { background: transparent; }
+button.lc-git-connect,
+.lc-git button.lc-primary {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+.lc-git button.lc-accent-outline {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 10.5px;
+}
+
+/* Repository rows */
+button.lc-git-repo {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 3px 6px;
+  min-height: 0;
+}
+button.lc-git-repo:hover { background-color: @lc_surface2; }
+button.lc-git-repo-selected,
+button.lc-git-repo-selected:hover { background-color: @lc_accent_tint; }
+.lc-git-repo-row { padding: 0; }
+
+/* Changed-file rows */
+.lc-git-change { padding: 1px 4px; border-radius: 6px; }
+.lc-git-change:hover { background-color: @lc_surface; }
+.lc-git-change-glyph {
+  color: @lc_accent;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+}

@@ -14,6 +14,7 @@
 
 pub mod app;
 pub mod dialogs;
+pub mod github;
 pub mod markdown;
 pub mod panels;
 pub mod state;

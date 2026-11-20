@@ -1226,6 +1226,7 @@ dependencies = [
  "link-tools",
  "portable-pty",
  "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",

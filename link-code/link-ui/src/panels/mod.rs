@@ -3,4 +3,5 @@
 pub mod agent;
 pub mod bottom;
 pub mod editor;
+pub mod git;
 pub mod sidebar;

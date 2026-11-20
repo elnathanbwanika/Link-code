@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::config::{data_dir, write_json_atomic};
 use crate::error::{LinkError, Result};
+use crate::event::{TodoItem, TodoStatus};
 use crate::permission::PermissionMode;
 use crate::DATA_FORMAT_VERSION;
 
@@ -130,6 +131,28 @@ pub struct Turn {
     pub mode: PermissionMode,
 }
 
+/// Durable description of the work inside one conversation.
+///
+/// Messages alone tell a resumed model what was said, but not what was
+/// *finished*. Keeping the live checklist, the files already changed and a
+/// short note about the stopping point lets the next turn continue instead of
+/// restarting from scratch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkState {
+    /// Latest `update_tasks` checklist.
+    #[serde(default)]
+    pub todos: Vec<TodoItem>,
+    /// Workspace-relative files the agent wrote or edited, in first-seen order.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// Short, human-readable description of where the last turn stopped.
+    #[serde(default)]
+    pub note: String,
+    /// When the last turn finished.
+    #[serde(default)]
+    pub last_turn_at: Option<DateTime<Utc>>,
+}
+
 /// A saved conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -145,6 +168,9 @@ pub struct Session {
     pub messages: Vec<StoredMessage>,
     #[serde(default)]
     pub turns: Vec<Turn>,
+    /// Checklist and edited-file log used to resume work without repeating it.
+    #[serde(default)]
+    pub work: WorkState,
     /// True while the title is still machine-generated (first user message).
     #[serde(default)]
     pub auto_title: bool,
@@ -178,6 +204,7 @@ impl Session {
             updated_at: now,
             messages: Vec::new(),
             turns: Vec::new(),
+            work: WorkState::default(),
             auto_title: true,
             tags: Vec::new(),
         }
@@ -268,6 +295,95 @@ impl Session {
         self.turns.iter().map(|turn| turn.cost_usd).sum()
     }
 
+    // ---- durable work state ---------------------------------------------
+
+    /// Replace the live checklist and persist it with the session.
+    pub fn set_todos(&mut self, items: Vec<TodoItem>) {
+        self.work.todos = items;
+        self.touch();
+    }
+
+    /// Remember a file the agent changed, once. Paths are workspace-relative
+    /// when possible so the note stays readable across sessions.
+    pub fn record_edited_file(&mut self, path: &str) {
+        let path = path.trim();
+        if path.is_empty() {
+            return;
+        }
+        if self.work.files.iter().any(|existing| existing == path) {
+            return;
+        }
+        self.work.files.push(path.to_string());
+        // A runaway edit loop should not grow the session file forever.
+        if self.work.files.len() > 200 {
+            self.work.files.remove(0);
+        }
+        self.touch();
+    }
+
+    /// Describe where the turn stopped, so a reopened session can continue.
+    pub fn set_resume_note(&mut self, note: impl Into<String>) {
+        self.work.note = note.into();
+        self.work.last_turn_at = Some(Utc::now());
+        self.touch();
+    }
+
+    /// Number of checklist items that are not done yet.
+    pub fn open_task_count(&self) -> usize {
+        self.work
+            .todos
+            .iter()
+            .filter(|item| item.status != TodoStatus::Done)
+            .count()
+    }
+
+    /// True when the session carries enough state to resume meaningfully.
+    pub fn has_work_state(&self) -> bool {
+        !self.work.todos.is_empty()
+            || !self.work.files.is_empty()
+            || !self.work.note.trim().is_empty()
+    }
+
+    /// System-prompt section that turns a reopened conversation into a
+    /// continuation rather than a fresh attempt.
+    pub fn resume_prompt(&self) -> Option<String> {
+        if !self.has_work_state() {
+            return None;
+        }
+        let open = self.open_task_count();
+        let mut out = String::from("## Continuing this session\n\n");
+        out.push_str(
+            "This conversation already contains earlier work on the task. \
+             Do not start over, re-plan from scratch, or repeat steps that are \
+             already finished.\n\n",
+        );
+        if !self.work.todos.is_empty() {
+            out.push_str(&format!("Task checklist ({open} open):\n"));
+            for item in &self.work.todos {
+                out.push_str(&format!("- {} {}\n", item.status.marker(), item.text));
+            }
+            out.push('\n');
+        }
+        if !self.work.files.is_empty() {
+            out.push_str("Files already changed in this session:\n");
+            for file in &self.work.files {
+                out.push_str(&format!("- {file}\n"));
+            }
+            out.push('\n');
+        }
+        if !self.work.note.trim().is_empty() {
+            out.push_str("Where the previous turn stopped:\n");
+            out.push_str(self.work.note.trim());
+            out.push_str("\n\n");
+        }
+        out.push_str(
+            "Continue from the first unfinished checklist item. Do not re-read or \
+             rewrite a file listed as already changed unless the user asks for it. \
+             If the user's new message starts unrelated work, follow the user instead.",
+        );
+        Some(out)
+    }
+
     pub fn summary(&self) -> SessionSummary {
         SessionSummary {
             id: self.id.clone(),
@@ -293,6 +409,7 @@ impl Session {
             updated_at: now,
             messages: self.messages.clone(),
             turns: self.turns.clone(),
+            work: self.work.clone(),
             auto_title: false,
             tags: self.tags.clone(),
         }
@@ -598,5 +715,51 @@ mod tests {
         let b = tempfile::tempdir().unwrap();
         assert_eq!(store.workspace_dir(a.path()), store.workspace_dir(a.path()));
         assert_ne!(store.workspace_dir(a.path()), store.workspace_dir(b.path()));
+    }
+
+    #[test]
+    fn work_state_survives_a_round_trip_and_builds_a_resume_prompt() {
+        let (dir, store) = store();
+        let workspace = dir.path();
+        let mut session = Session::new(workspace, "m");
+        session.push_user("add a login page");
+        session.set_todos(vec![
+            TodoItem {
+                text: "read the router".to_string(),
+                status: TodoStatus::Done,
+            },
+            TodoItem {
+                text: "create the login page".to_string(),
+                status: TodoStatus::InProgress,
+            },
+            TodoItem {
+                text: "add tests".to_string(),
+                status: TodoStatus::Pending,
+            },
+        ]);
+        session.record_edited_file("src/routes.rs");
+        session.record_edited_file("src/routes.rs");
+        session.record_edited_file("src/login.rs");
+        session.set_resume_note("Stopped after scaffolding the form; tests are next.");
+        store.save(&session).unwrap();
+
+        let loaded = store.load(workspace, &session.id).unwrap();
+        assert_eq!(loaded.work.todos.len(), 3);
+        assert_eq!(loaded.work.files, vec!["src/routes.rs", "src/login.rs"]);
+        assert_eq!(loaded.open_task_count(), 2);
+        let prompt = loaded.resume_prompt().unwrap();
+        assert!(prompt.contains("create the login page"));
+        assert!(prompt.contains("Do not start over"));
+        assert!(prompt.contains("2 open"));
+        assert!(prompt.contains("src/login.rs"));
+        assert!(prompt.contains("tests are next"));
+    }
+
+    #[test]
+    fn an_empty_session_has_no_resume_prompt() {
+        let dir = workspace();
+        let session = Session::new(dir.path(), "m");
+        assert!(!session.has_work_state());
+        assert!(session.resume_prompt().is_none());
     }
 }

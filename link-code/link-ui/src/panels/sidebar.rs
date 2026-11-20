@@ -112,7 +112,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     let pills = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let git = gtk::Button::with_label("Git");
     git.add_css_class("lc-pill-btn");
-    git.set_tooltip_text(Some("Run git status in the terminal"));
+    git.set_tooltip_text(Some("GitHub account, clone and commit"));
     let settings = gtk::Button::with_label("Settings");
     settings.add_css_class("lc-pill-btn");
     pills.append(&git);
@@ -257,8 +257,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
             }
             if let Some(widgets) = state.widgets() {
                 widgets.bottom_root.set_visible(true);
-                widgets.bottom.run_in_terminal(&state, "git status\n");
-                widgets.bottom.focus_terminal();
+                widgets.bottom.show_git(&state);
             }
         });
     }
@@ -995,6 +994,10 @@ pub fn show_history(state: &Rc<UiState>, panel: &Rc<SidebarPanel>) {
 
 /// Load a stored session into the chat panel.
 pub fn show_session(state: &Rc<UiState>, session: Session) {
+    show_session_inner(state, session, true);
+}
+
+fn show_session_inner(state: &Rc<UiState>, session: Session, notify: bool) {
     let Some(widgets) = state.widgets() else {
         return;
     };
@@ -1031,7 +1034,46 @@ pub fn show_session(state: &Rc<UiState>, session: Session) {
     }
 
     let title = session.title.clone();
+    let cost = session.total_cost();
+    // Restore the live checklist so the user sees the same progress the agent
+    // is resuming from.
+    if session.work.todos.is_empty() {
+        widgets.tasks.clear();
+    } else {
+        widgets.tasks.render(&session.work.todos);
+    }
     *state.session.borrow_mut() = Some(session);
-    state.toast(&format!("Loaded session “{title}”"));
+    state.cost.set(cost);
+    if notify {
+        state.toast(&format!("Loaded session “{title}”"));
+    }
     crate::panels::agent::scroll_to_bottom(&widgets);
+}
+
+/// Reopen the most recent conversation for the current workspace.
+///
+/// Called when a workspace is opened (including the last workspace on launch)
+/// so the agent continues the existing task instead of starting a new session
+/// and repeating completed work.
+pub fn resume_last(state: &Rc<UiState>) {
+    let Some(workspace) = state.workspace_path() else {
+        return;
+    };
+    if state.session.borrow().is_some() {
+        return;
+    }
+    let Some(session) = state.session_store.most_recent(&workspace) else {
+        return;
+    };
+    let title = session.title.clone();
+    let open = session.open_task_count();
+    show_session_inner(state, session, false);
+    if open > 0 {
+        state.toast(&format!(
+            "Resumed “{title}” \u{00b7} {open} unfinished task{}",
+            if open == 1 { "" } else { "s" }
+        ));
+    } else {
+        state.toast(&format!("Resumed “{title}”"));
+    }
 }

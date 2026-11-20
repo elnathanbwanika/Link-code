@@ -18,6 +18,7 @@ pub mod context;
 pub mod diff;
 pub mod error;
 pub mod event;
+pub mod git;
 pub mod paths;
 pub mod permission;
 pub mod project;
