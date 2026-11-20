@@ -284,6 +284,7 @@ impl LinkWindow {
             bottom: bottom.clone(),
             chat_list: agent.chat_list.clone(),
             chat_scroll: agent.chat_scroll.clone(),
+            chat_following: agent.chat_following.clone(),
             activity: agent.activity.clone(),
             activity_spinner: agent.activity_spinner.clone(),
             activity_label: agent.activity_label.clone(),

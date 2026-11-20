@@ -360,6 +360,16 @@ entry.lc-filter:focus-within, searchentry.lc-filter:focus-within {
 }
 /* -------------------------------------------------------------- chat log */
 .lc-conversation { background-color: @lc_bg; }
+button.lc-jump-latest {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_accent_border;
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: @lc_accent;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+button.lc-jump-latest:hover { background-color: @lc_accent_tint; }
+button.lc-jump-latest image { color: @lc_accent; }
 .lc-block-assistant { background-color: transparent; border: none;
   border-radius: 0; padding: 1px 2px 4px 2px; }
 .lc-block-user {

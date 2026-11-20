@@ -38,6 +38,10 @@ pub struct AgentPanel {
     pub root: gtk::Box,
     pub chat_list: gtk::Box,
     pub chat_scroll: gtk::ScrolledWindow,
+    /// True while the conversation should keep following new output. Cleared
+    /// when the reader scrolls away from the bottom, so streaming the agent's
+    /// reply never yanks them back down.
+    pub chat_following: Rc<Cell<bool>>,
     pub activity: gtk::Box,
     pub activity_spinner: gtk::Spinner,
     pub activity_label: gtk::Label,
@@ -414,6 +418,55 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         .build();
     chat_scroll.add_css_class("lc-conversation");
 
+    // Auto-follow: the conversation stays pinned to the bottom while the
+    // reader is already there, and stops following the moment they scroll up
+    // to re-read something. A floating button brings them back.
+    let chat_following = Rc::new(Cell::new(true));
+    let chat_overlay = gtk::Overlay::new();
+    chat_overlay.set_vexpand(true);
+    chat_overlay.set_child(Some(&chat_scroll));
+
+    let scroll_latest = gtk::Button::new();
+    scroll_latest.add_css_class("lc-jump-latest");
+    scroll_latest.set_halign(gtk::Align::Center);
+    scroll_latest.set_valign(gtk::Align::End);
+    scroll_latest.set_margin_bottom(14);
+    scroll_latest.set_visible(false);
+    scroll_latest.set_tooltip_text(Some("Jump to the latest message"));
+    {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+        let icon = gtk::Image::from_icon_name("go-down-symbolic");
+        icon.set_pixel_size(13);
+        row.append(&icon);
+        let label = gtk::Label::new(Some("Jump to latest"));
+        label.add_css_class("lc-tiny");
+        row.append(&label);
+        scroll_latest.set_child(Some(&row));
+    }
+    chat_overlay.add_overlay(&scroll_latest);
+
+    // The adjustment is the single source of truth: any value change (a scroll
+    // by the reader, or our own programmatic jump) updates the follow flag and
+    // the button in one place.
+    {
+        let following = chat_following.clone();
+        let button = scroll_latest.clone();
+        chat_scroll.vadjustment().connect_value_changed(move |adjustment| {
+            let at_bottom = adjustment_at_bottom(adjustment);
+            following.set(at_bottom);
+            button.set_visible(!at_bottom);
+        });
+    }
+    {
+        let scroll = chat_scroll.clone();
+        scroll_latest.connect_clicked(move |_| {
+            let adjustment = scroll.vadjustment();
+            adjustment.set_value(
+                (adjustment.upper() - adjustment.page_size()).max(adjustment.lower()),
+            );
+        });
+    }
+
     // ---- live activity --------------------------------------------------
     // One line that says what the agent is doing right now. It replaces
     // silence: every tool start, approval wait and failure is narrated here.
@@ -633,7 +686,7 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     input.add_controller(key);
 
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    body.append(&chat_scroll);
+    body.append(&chat_overlay);
     body.append(&activity);
     body.append(&suggestions_box);
     body.append(&composer_area);
@@ -648,6 +701,7 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         root,
         chat_list,
         chat_scroll,
+        chat_following,
         activity,
         activity_spinner,
         activity_label,
@@ -726,7 +780,30 @@ pub fn stop(state: &Rc<UiState>) {
     state.toast("Stopping the agent\u{2026}");
 }
 
+/// Distance from the bottom (in pixels) that still counts as "at the bottom".
+/// A couple of lines of slack keeps the view pinned when a wheel notch lands
+/// a few pixels short of the very end.
+const FOLLOW_SLACK: f64 = 40.0;
+
+/// Whether the view is close enough to the end to keep following new output.
+fn adjustment_at_bottom(adjustment: &gtk::Adjustment) -> bool {
+    let end = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+    adjustment.value() >= end - FOLLOW_SLACK
+}
+
+/// Keep the conversation pinned to the newest message, but only when the
+/// reader has not scrolled away. Scrolling up clears the follow flag until
+/// they return to the bottom or press "Jump to latest".
 pub fn scroll_to_bottom(widgets: &crate::state::Widgets) {
+    if !widgets.chat_following.get() {
+        return;
+    }
+    scroll_to_bottom_force(widgets);
+}
+
+/// Scroll to the newest message regardless of the follow flag, e.g. right
+/// after the reader sends a message and expects to see it.
+pub fn scroll_to_bottom_force(widgets: &crate::state::Widgets) {
     thread_local! {
         static PENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
@@ -866,7 +943,7 @@ pub fn send_message(state: &Rc<UiState>) {
 
     let bubble = chat_message::user_bubble(text.trim());
     widgets.chat_list.append(&bubble);
-    scroll_to_bottom(&widgets);
+    scroll_to_bottom_force(&widgets);
 
     state.push_user_message(text.trim());
     *state.turn_text.borrow_mut() = String::new();

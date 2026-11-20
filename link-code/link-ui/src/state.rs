@@ -147,6 +147,9 @@ pub struct Widgets {
 
     pub chat_list: gtk::Box,
     pub chat_scroll: gtk::ScrolledWindow,
+    /// True while the conversation should follow new agent output. Cleared
+    /// when the reader scrolls up, restored when they reach the bottom again.
+    pub chat_following: Rc<Cell<bool>>,
     pub activity: gtk::Box,
     pub activity_spinner: gtk::Spinner,
     pub activity_label: gtk::Label,
