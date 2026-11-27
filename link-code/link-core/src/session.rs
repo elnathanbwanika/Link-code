@@ -689,7 +689,9 @@ mod tests {
         session.push(StoredMessage::assistant("Found it: line 4.", "gemini"));
 
         let history = session.chat_history();
-        assert_eq!(history.len(), 5);
+        // Calls separated by their results stay separate turns; only
+        // consecutive tool-only assistant messages are merged.
+        assert_eq!(history.len(), 6);
         assert_eq!(history[0].content, "fix the bug");
         assert_eq!(history[1].tool_calls.len(), 1);
         assert_eq!(
@@ -699,7 +701,8 @@ mod tests {
         assert_eq!(history[2].role, Role::Tool);
         assert_eq!(history[2].tool_call_id.as_deref(), Some("c1"));
         assert_eq!(history[3].tool_calls[0].name, "read_file");
-        assert_eq!(history[4].content, "Found it: line 4.");
+        assert_eq!(history[4].role, Role::Tool);
+        assert_eq!(history[5].content, "Found it: line 4.");
     }
 
     #[test]

@@ -559,7 +559,7 @@ impl ModelProvider for RotatingProvider {
 mod tests {
     use super::*;
     use crate::provider::ConnectionReport;
-    use crate::types::{ChatMessage, StreamEvent};
+    use crate::types::StreamEvent;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FakeFactory {
