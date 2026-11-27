@@ -5,8 +5,11 @@
 - Push the code changes to GitHub; GitHub workers build the `.deb` and publish it. The user installs the resulting package on their machine.
 
 ## Packaging
-- `package_deb.sh` defaults to a release binary at `/workspaces/Link-code/link-code/target/release/link-code`, `VERSION=1.0.33`, and `/tmp/opencode/`; override with `BINARY`, `VERSION` and `OUT_DIR`.
+- `package_deb.sh` defaults to a release binary at `/workspaces/Link-code/link-code/target/release/link-code`, `VERSION=1.0.34`, and `/tmp/opencode/`; override with `BINARY`, `VERSION` and `OUT_DIR`.
 - `.github/workflows/build-deb.yml` builds on `ubuntu-24.04` for every push, uploads the `.deb` as an artifact, and attaches it to a GitHub release for `v*` tags.
+
+## Model adapters
+- Shared tool schemas are OpenAI-shaped and include `additionalProperties`; the Gemini adapter strips it recursively because Google rejects that field in function declarations.
 
 ## Layout
 - Shared panel minimums live in `link-ui/src/window.rs` (`SIDEBAR_MIN`, `BOTTOM_MIN_HEIGHT`); panels import them instead of duplicating requests.

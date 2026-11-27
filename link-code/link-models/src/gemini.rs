@@ -55,6 +55,27 @@ impl GeminiProvider {
         Value::Array(parts)
     }
 
+    /// Gemini's function declarations accept only a small JSON-Schema subset.
+    /// The shared tool schemas are built for OpenAI and include
+    /// `additionalProperties`, which Google rejects with HTTP 400. Strip it
+    /// recursively without changing the schema sent to other providers.
+    fn sanitize_schema(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                map.remove("additionalProperties");
+                for child in map.values_mut() {
+                    Self::sanitize_schema(child);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    Self::sanitize_schema(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn build_body(&self, request: &ChatRequest) -> Value {
         let mut contents: Vec<Value> = Vec::new();
         for message in &request.messages {
@@ -110,12 +131,14 @@ impl GeminiProvider {
                 .iter()
                 .filter_map(|tool| {
                     let function = tool.get("function")?;
+                    let mut parameters = function.get("parameters").cloned().unwrap_or(json!({
+                        "type": "object", "properties": {}
+                    }));
+                    Self::sanitize_schema(&mut parameters);
                     Some(json!({
                         "name": function.get("name")?,
                         "description": function.get("description").cloned().unwrap_or(json!("")),
-                        "parameters": function.get("parameters").cloned().unwrap_or(json!({
-                            "type": "object", "properties": {}
-                        })),
+                        "parameters": parameters,
                     }))
                 })
                 .collect();
@@ -376,4 +399,52 @@ impl ModelProvider for GeminiProvider {
 
 pub fn make(config: ModelConfig, api_key: Option<String>) -> Arc<dyn ModelProvider> {
     Arc::new(GeminiProvider::new(config, api_key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_schema_drops_gemini_unsupported_fields() {
+        let config = ModelConfig {
+            provider: ProviderKind::Gemini,
+            base_url: "https://generativelanguage.googleapis.com".to_string(),
+            model_id: "gemini-2.0-flash".to_string(),
+            ..ModelConfig::default()
+        };
+        let provider = GeminiProvider::new(config, None);
+        let mut request = ChatRequest::new("gemini-2.0-flash");
+        request.tools = vec![serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "File path" },
+                        "options": {
+                            "type": "object",
+                            "properties": {
+                                "append": { "type": "boolean" }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "required": ["path"],
+                    "additionalProperties": false
+                }
+            }
+        })];
+
+        let body = provider.build_body(&request);
+        let parameters = &body["tools"][0]["functionDeclarations"][0]["parameters"];
+        assert!(parameters.get("additionalProperties").is_none());
+        assert!(parameters["properties"]["options"]
+            .get("additionalProperties")
+            .is_none());
+        assert_eq!(parameters["properties"]["path"]["type"], "string");
+        assert_eq!(parameters["required"][0], "path");
+    }
 }
