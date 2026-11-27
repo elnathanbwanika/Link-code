@@ -78,8 +78,8 @@ pub fn refresh(state: &Rc<UiState>) {
             text
         })
         .unwrap_or_else(|| "no folder open".to_string());
-    widgets.workspace.set_label(&workspace);
-    widgets.workspace.set_tooltip_text(Some(&workspace));
+    widgets.status_workspace.set_label(&workspace);
+    widgets.status_workspace.set_tooltip_text(Some(&workspace));
 
     let used = state.context_used.get();
     let max = state.context_max.get();
