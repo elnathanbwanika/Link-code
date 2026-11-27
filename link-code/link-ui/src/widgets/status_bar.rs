@@ -1,4 +1,8 @@
-//! The 26px status bar pinned to the bottom of the window.
+//! The compact status bar pinned to the bottom of the window.
+//!
+//! It carries read-only information. The actions that used to live here are
+//! available once each in the header and the composer, so there is a single
+//! place to open a folder, pick a model or change the permission mode.
 
 use std::rc::Rc;
 
@@ -8,53 +12,29 @@ use crate::state::UiState;
 
 pub struct StatusBar {
     pub root: gtk::Box,
-    pub workspace: gtk::Button,
-    pub model: gtk::Button,
-    pub mode: gtk::Button,
+    pub workspace: gtk::Label,
     pub tokens: gtk::Label,
     pub cost: gtk::Label,
     pub cost_sep: gtk::Label,
 }
 
-pub fn build(state: &Rc<UiState>) -> StatusBar {
+pub fn build(_state: &Rc<UiState>) -> StatusBar {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     root.add_css_class("lc-status");
     root.set_margin_start(2);
     root.set_margin_end(2);
 
-    let workspace = gtk::Button::new();
-    super::set_button_text(&workspace, "no folder open", 28);
-    workspace.add_css_class("lc-header-button");
+    let workspace = gtk::Label::new(Some("no folder open"));
     workspace.add_css_class("lc-path");
-    workspace.set_tooltip_text(Some("Open a folder (Ctrl+O)"));
-    {
-        let state = state.clone();
-        workspace.connect_clicked(move |_| crate::window::open_folder_dialog(&state));
-    }
+    workspace.set_xalign(0.0);
+    workspace.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    workspace.set_width_chars(24);
+    workspace.set_tooltip_text(Some("Current workspace"));
+    root.append(&workspace);
 
-    let model = gtk::Button::new();
-    super::set_button_text_for(
-        &model,
-        "no model",
-        24,
-        gtk::pango::EllipsizeMode::End,
-    );
-    model.add_css_class("lc-header-button");
-    model.add_css_class("lc-mono");
-    {
-        let state = state.clone();
-        model.connect_clicked(move |button| {
-            crate::widgets::model_badge::show_picker(&state, button.upcast_ref());
-        });
-    }
-
-    let mode = gtk::Button::with_label("Ask");
-    mode.add_css_class("lc-header-button");
-    mode.set_tooltip_text(Some("Cycle permission mode (Shift+Tab)"));
-    {
-        let state = state.clone();
-        mode.connect_clicked(move |_| state.cycle_mode());
-    }
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    root.append(&spacer);
 
     let tokens = gtk::Label::new(Some("\u{2014} tokens"));
     tokens.add_css_class("lc-mono");
@@ -65,32 +45,16 @@ pub fn build(state: &Rc<UiState>) -> StatusBar {
     cost.add_css_class("lc-tiny");
     cost.add_css_class("lc-ok");
 
-    let separator = |text: &str| {
-        let label = gtk::Label::new(Some(text));
-        label.add_css_class("lc-sep");
-        label
-    };
-
-    root.append(&workspace);
-    root.append(&separator("\u{2502}"));
-    root.append(&model);
-    root.append(&separator("\u{2502}"));
-    root.append(&mode);
-
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    root.append(&spacer);
+    let cost_sep = gtk::Label::new(Some("\u{2502}"));
+    cost_sep.add_css_class("lc-sep");
 
     root.append(&tokens);
-    let cost_sep = separator("\u{2502}");
     root.append(&cost_sep);
     root.append(&cost);
 
     StatusBar {
         root,
         workspace,
-        model,
-        mode,
         tokens,
         cost,
         cost_sep,
@@ -114,20 +78,8 @@ pub fn refresh(state: &Rc<UiState>) {
             text
         })
         .unwrap_or_else(|| "no folder open".to_string());
-    super::set_button_text(&widgets.status_workspace, &workspace, 28);
-    widgets
-        .status_workspace
-        .set_tooltip_text(Some(&workspace));
-    super::set_button_text_for(
-        &widgets.status_model,
-        &state.chat_model_label(),
-        24,
-        gtk::pango::EllipsizeMode::End,
-    );
-    widgets.status_mode.set_label(state.mode().label());
-    widgets
-        .status_mode
-        .set_tooltip_text(Some(state.mode().description()));
+    widgets.workspace.set_label(&workspace);
+    widgets.workspace.set_tooltip_text(Some(&workspace));
 
     let used = state.context_used.get();
     let max = state.context_max.get();

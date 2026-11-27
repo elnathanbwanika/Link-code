@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Paths and version can be overridden by CI (see .github/workflows/build-deb.yml).
 BINARY="${BINARY:-/workspaces/Link-code/link-code/target/release/link-code}"
-VERSION="${VERSION:-1.0.32}"
+VERSION="${VERSION:-1.0.33}"
 ARCH="${ARCH:-amd64}"
 PKGNAME=link-code
 PKGDIR="${PKGDIR:-/tmp/link-code-deb}"

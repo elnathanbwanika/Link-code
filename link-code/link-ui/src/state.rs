@@ -157,7 +157,6 @@ pub struct Widgets {
     pub send_button: gtk::Button,
     pub stop_button: gtk::Button,
     pub mode_button: gtk::Button,
-    pub model_button: gtk::Button,
     pub composer_model_button: gtk::Button,
     pub context_bar: gtk::ProgressBar,
     pub context_label: gtk::Label,
@@ -166,9 +165,7 @@ pub struct Widgets {
     pub attachments_box: gtk::Box,
     pub attachments_scroll: gtk::ScrolledWindow,
 
-    pub status_workspace: gtk::Button,
-    pub status_model: gtk::Button,
-    pub status_mode: gtk::Button,
+    pub status_workspace: gtk::Label,
     pub status_tokens: gtk::Label,
     pub status_cost: gtk::Label,
     pub status_cost_sep: gtk::Label,
@@ -616,18 +613,6 @@ impl UiState {
         if let Some(widgets) = self.widgets() {
             let label = self.chat_model_label();
             crate::widgets::set_button_text_for(
-                &widgets.model_button,
-                &label,
-                24,
-                gtk::pango::EllipsizeMode::End,
-            );
-            crate::widgets::set_button_text_for(
-                &widgets.status_model,
-                &label,
-                24,
-                gtk::pango::EllipsizeMode::End,
-            );
-            crate::widgets::set_button_text_for(
                 &widgets.composer_model_button,
                 &label,
                 18,
@@ -644,8 +629,7 @@ impl UiState {
                     )
                 })
                 .unwrap_or_else(|| "Configure a model in Models (Ctrl+M)".to_string());
-            widgets.model_button.set_tooltip_text(Some(&tooltip));
-            widgets.status_model.set_tooltip_text(Some(&tooltip));
+            widgets.composer_model_button.set_tooltip_text(Some(&tooltip));
         }
     }
 
@@ -676,13 +660,9 @@ impl UiState {
             widgets
                 .mode_button
                 .set_tooltip_text(Some(mode.description()));
-            widgets.status_mode.set_label(mode.label());
-            widgets.status_mode.set_tooltip_text(Some(mode.description()));
             if mode == PermissionMode::FullAuto {
-                widgets.status_mode.add_css_class("lc-error");
                 widgets.mode_button.add_css_class("full-auto");
             } else {
-                widgets.status_mode.remove_css_class("lc-error");
                 widgets.mode_button.remove_css_class("full-auto");
             }
         }

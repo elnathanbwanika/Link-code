@@ -3,7 +3,7 @@
    --------------------------------------------------------------------------
    GTK's CSS dialect has no custom properties, so the published palette is
    mapped to named colours here and referenced everywhere with @lc_*.
-   Radii: cards 16 · composer 28 · chips/buttons 999 or 12 · tiles 12
+    Radii: cards 16 · composer 28 · chips/buttons 999 or 12-16 · tiles 12
    ========================================================================== */
 
 @define-color lc_bg            #252524;
@@ -147,6 +147,11 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-rail button:checked {
   color: @lc_accent; background-color: @lc_accent_tint;
 }
+.lc-rail-divider {
+  background-color: @lc_border_strong;
+  min-height: 1px;
+  margin: 6px 8px;
+}
 
 /* --------------------------------------------------------------- panels */
 .lc-sidebar { background-color: @lc_sidebar; border-right: 1px solid @lc_border; }
@@ -166,7 +171,7 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 12px;
 }
 .lc-card:hover { border-color: @lc_border_strong; }
@@ -208,7 +213,7 @@ button.lc-plus image { color: @lc_dark_text; }
 .lc-workspace-card {
   background-color: @lc_surface;
   border: 1px solid @lc_border;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 12px;
 }
 .lc-workspace-name {
@@ -250,7 +255,7 @@ button.lc-pill-btn:hover { border-color: @lc_border_strong; background-color: #3
 .lc-thread-card {
   background-color: transparent;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: 12px;
   padding: 7px 10px;
   transition: background-color 160ms ease, border-color 160ms ease;
 }
@@ -289,7 +294,7 @@ button.lc-ide-pill:checked { background-color: @lc_accent; color: @lc_dark_text;
 .lc-file-row {
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 0 8px;
   min-height: 32px;
   color: @lc_text;
@@ -367,6 +372,7 @@ button.lc-jump-latest {
   padding: 4px 12px;
   color: @lc_accent;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  animation: lc-soft-in 180ms ease-out;
 }
 button.lc-jump-latest:hover { background-color: @lc_accent_tint; }
 button.lc-jump-latest image { color: @lc_accent; }
@@ -533,9 +539,10 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
 .lc-ai-spinner { color: @lc_accent; min-width: 12px; min-height: 12px; }
 
 .lc-suggestion {
-  background-color: @lc_surface; border: 1px solid @lc_border; border-radius: 12px;
+  background-color: @lc_surface; border: 1px solid @lc_border; border-radius: 14px;
   padding: 6px 10px; font-size: 10.5px; color: @lc_text;
   transition: border-color 160ms ease, color 160ms ease;
+  animation: lc-soft-in 200ms ease-out;
 }
 .lc-suggestion:hover { border-color: @lc_accent_border; color: @lc_accent; }
 
@@ -792,7 +799,7 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
 .lc-tabstrip { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
 .lc-tab {
   background: transparent; border: none; border-bottom: 2px solid transparent;
-  border-radius: 0; padding: 6px 10px; font-size: 10.5px; color: @lc_muted;
+  border-radius: 8px 8px 0 0; padding: 6px 10px; font-size: 10.5px; color: @lc_muted;
 }
 .lc-tab:hover { background-color: @lc_surface2; color: @lc_text; }
 .lc-tab:checked { color: @lc_text; border-bottom-color: @lc_accent; }
@@ -835,8 +842,8 @@ window.lc-modal-dim { background-color: alpha(#000000, 0.62); }
 .lc-notebook { background-color: @lc_bg; }
 .lc-notebook tabbar { background-color: @lc_sidebar; border-bottom: 1px solid @lc_border; }
 .lc-notebook tab {
-  background: transparent; border: none; padding: 4px 10px;
-  color: @lc_muted; font-size: 10px;
+  background: transparent; border: none; border-radius: 8px 8px 0 0;
+  padding: 4px 10px; color: @lc_muted; font-size: 10px;
 }
 .lc-notebook tab:hover { color: @lc_text; }
 .lc-notebook tab:checked { color: @lc_text; box-shadow: inset 0 -2px @lc_accent; }
@@ -1184,6 +1191,17 @@ switch slider { background-color: @lc_text; border-radius: 999px; }
 /* ------------------------------------------------------- reduced motion */
 /* GTK's CSS dialect has no @media queries, so motion is kept to short
    150-200ms transitions that remain unobtrusive without a media query. */
+
+/* Entrance for transient elements: a four-pixel lift and a fade. Only
+   opacity and transform animate, so no layout work is triggered. */
+@keyframes lc-soft-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Tactile press feedback without moving any neighbouring widget. */
+button:active { opacity: 0.82; }
+.lc-suggestion:active { opacity: 0.82; }
 
 /* =============================================================== git panel */
 .lc-git { background-color: @lc_bg; }

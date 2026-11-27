@@ -5,11 +5,12 @@
 - Push the code changes to GitHub; GitHub workers build the `.deb` and publish it. The user installs the resulting package on their machine.
 
 ## Packaging
-- `package_deb.sh` defaults to a release binary at `/workspaces/Link-code/link-code/target/release/link-code`, `VERSION=1.0.32`, and `/tmp/opencode/`; override with `BINARY`, `VERSION` and `OUT_DIR`.
+- `package_deb.sh` defaults to a release binary at `/workspaces/Link-code/link-code/target/release/link-code`, `VERSION=1.0.33`, and `/tmp/opencode/`; override with `BINARY`, `VERSION` and `OUT_DIR`.
 - `.github/workflows/build-deb.yml` builds on `ubuntu-24.04` for every push, uploads the `.deb` as an artifact, and attaches it to a GitHub release for `v*` tags.
 
 ## Layout
 - Shared panel minimums live in `link-ui/src/window.rs` (`SIDEBAR_MIN`, `BOTTOM_MIN_HEIGHT`); panels import them instead of duplicating requests.
+- One control per action: Settings lives in the header, the model picker and mode switch in the composer; the status bar is read-only.
 
 ## Sandbox
 - The `git` CLI is not installed in the sandbox; use the built-in git tools for status and commits.

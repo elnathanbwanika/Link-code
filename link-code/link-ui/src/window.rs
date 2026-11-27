@@ -10,7 +10,7 @@
 //! │56px│ (files /  │──────────────────────│ chat + composer     │
 //! │    │ history)  │ bottom panel         │                     │
 //! ├────┴───────────┴──────────────────────┴─────────────────────┤
-//! │ Status bar: workspace · model · mode · tokens · cost        │
+//! │ Status bar: workspace · tokens · cost (read-only)           │
 //! └──────────────────────────────────────────────────────────────┘
 //! ```
 
@@ -144,24 +144,6 @@ impl LinkWindow {
         }
         header.pack_start(&new_chat);
 
-        let model_button = gtk::Button::new();
-        widgets::set_button_text_for(
-            &model_button,
-            "no model",
-            24,
-            gtk::pango::EllipsizeMode::End,
-        );
-        model_button.add_css_class("lc-ghost");
-        model_button.add_css_class("lc-mono");
-        model_button.add_css_class("lc-tiny");
-        {
-            let state = state.clone();
-            model_button.connect_clicked(move |button| {
-                widgets::model_badge::show_picker(&state, button.upcast_ref());
-            });
-        }
-        header.pack_end(&model_button);
-
         let palette = gtk::Button::from_icon_name("system-search-symbolic");
         palette.add_css_class("lc-header-button");
         palette.set_tooltip_text(Some("Command palette (Ctrl+K)"));
@@ -204,13 +186,14 @@ impl LinkWindow {
         let rail_bottom = rail_button("utilities-system-monitor-symbolic", "Terminal (Ctrl+J)");
         rail.append(&rail_explorer);
         rail.append(&rail_history);
+        let rail_divider = gtk::Separator::new(gtk::Orientation::Horizontal);
+        rail_divider.add_css_class("lc-rail-divider");
+        rail.append(&rail_divider);
         rail.append(&rail_agent);
         rail.append(&rail_bottom);
         let rail_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
         rail_spacer.set_vexpand(true);
         rail.append(&rail_spacer);
-        let rail_settings = rail_button("emblem-system-symbolic", "Settings (Ctrl+,)");
-        rail.append(&rail_settings);
 
         // ---- panels ------------------------------------------------------
         let sidebar = panels::sidebar::build(&state);
@@ -299,7 +282,6 @@ impl LinkWindow {
             send_button: agent.send_button.clone(),
             stop_button: agent.stop_button.clone(),
             mode_button: agent.mode_button.clone(),
-            model_button: model_button.clone(),
             composer_model_button: agent.composer_model_button.clone(),
             context_bar: agent.context_bar.clone(),
             context_label: agent.context_label.clone(),
@@ -308,8 +290,6 @@ impl LinkWindow {
             attachments_box: agent.attachments_box.clone(),
             attachments_scroll: agent.attachments_scroll.clone(),
             status_workspace: status.workspace.clone(),
-            status_model: status.model.clone(),
-            status_mode: status.mode.clone(),
             status_tokens: status.tokens.clone(),
             status_cost: status.cost.clone(),
             status_cost_sep: status.cost_sep.clone(),
@@ -512,11 +492,6 @@ impl LinkWindow {
                 }
             });
         }
-        {
-            let state = state.clone();
-            rail_settings.connect_clicked(move |_| crate::dialogs::settings::present(&state));
-        }
-
         register_actions(&window, &state);
         crate::app::install_accels(application, &state.config.borrow().clone());
 

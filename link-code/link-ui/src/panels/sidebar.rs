@@ -113,10 +113,8 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     let git = gtk::Button::with_label("Git");
     git.add_css_class("lc-pill-btn");
     git.set_tooltip_text(Some("GitHub account, clone and commit"));
-    let settings = gtk::Button::with_label("Settings");
-    settings.add_css_class("lc-pill-btn");
+    git.set_hexpand(true);
     pills.append(&git);
-    pills.append(&settings);
     card.append(&pills);
     column.append(&card);
 
@@ -157,10 +155,6 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     ide.add_css_class("lc-ide-pill");
     ide.set_tooltip_text(Some("Files open in the editor"));
     files_head.append(&ide);
-    let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-    refresh.add_css_class("lc-header-button");
-    refresh.set_tooltip_text(Some("Refresh"));
-    files_head.append(&refresh);
     column.append(&files_head);
 
     search.set_placeholder_text(Some("Filter files…"));
@@ -208,12 +202,10 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     let dock = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     dock.add_css_class("lc-sidebar-bottom");
     let apps = dock_button("view-grid-symbolic", "Command palette (Ctrl+K)");
-    let dock_settings = dock_button("emblem-system-symbolic", "Settings (Ctrl+,)");
     let dock_refresh = dock_button("view-refresh-symbolic", "Refresh files");
     let dock_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     dock_spacer.set_hexpand(true);
     dock.append(&apps);
-    dock.append(&dock_settings);
     dock.append(&dock_spacer);
     dock.append(&dock_refresh);
     root.append(&dock);
@@ -260,19 +252,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     }
     {
         let state = state.clone();
-        settings.connect_clicked(move |_| crate::dialogs::settings::present(&state));
-    }
-    {
-        let state = state.clone();
         new_thread.connect_clicked(move |_| crate::window::new_session(&state));
-    }
-    {
-        let state = state.clone();
-        let panel = panel.clone();
-        refresh.connect_clicked(move |_| {
-            refresh_files(&state, &panel);
-            refresh_history(&state, &panel);
-        });
     }
     {
         let state = state.clone();
@@ -289,10 +269,6 @@ pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     {
         let state = state.clone();
         apps.connect_clicked(move |_| crate::dialogs::command_palette::present(&state));
-    }
-    {
-        let state = state.clone();
-        dock_settings.connect_clicked(move |_| crate::dialogs::settings::present(&state));
     }
     {
         let state = state.clone();
