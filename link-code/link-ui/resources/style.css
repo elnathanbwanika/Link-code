@@ -562,32 +562,23 @@ button.lc-edit-chevron:hover { color: @lc_text; background-color: @lc_surface2; 
 .lc-todo-done { color: @lc_muted2; text-decoration: line-through; }
 .lc-todo-active { color: @lc_accent; }
 
-/* -------------------------------------------- agent top floating row */
-.lc-agent-top {
-  padding: 8px 10px;
+/* --------------------------------------------------- agent header row */
+.lc-agent-header {
+  border-bottom: 1px solid @lc_border;
+  background-color: @lc_bg;
 }
-.lc-agent-toggle, .lc-agent-tools > button {
-  background-color: rgba(46, 45, 43, 0.88);
-  border: 1px solid @lc_border_strong;
+.lc-agent-header button.lc-agent-header-toggle {
+  background-color: @lc_surface2;
+  border: 1px solid @lc_border;
   border-radius: 999px;
   min-width: 32px; min-height: 32px;
   padding: 0;
   color: @lc_text;
 }
-.lc-agent-toggle:hover, .lc-agent-tools > button:hover {
-  background-color: @lc_surface2;
+.lc-agent-header button.lc-agent-header-toggle:hover {
+  background-color: @lc_surface;
+  border-color: @lc_border_strong;
 }
-.lc-agent-tools {
-  background-color: rgba(46, 45, 43, 0.78);
-  border: 1px solid @lc_border_strong;
-  border-radius: 999px;
-  padding: 2px;
-}
-.lc-agent-tools > button {
-  border: none; background: transparent;
-  min-width: 32px; min-height: 32px;
-}
-.lc-agent-tools > button:hover { background-color: @lc_surface2; }
 
 /* ----------------------------------------------- composer + context */
 .lc-input-bar {
@@ -1099,6 +1090,7 @@ button.lc-type-chip .openai { color: @lc_ok; }
   background-color: transparent;
   border-color: transparent;
   min-height: 28px;
+  min-width: 0;
 }
 .lc-key-row entry.lc-input:focus-within {
   border-color: @lc_accent_border;

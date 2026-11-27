@@ -22,7 +22,9 @@ pub fn show_picker(state: &Rc<UiState>, anchor: &gtk::Widget) {
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
     content.add_css_class("lc-model-popover-inner");
-    content.set_width_request(380);
+    // A 380px picker is wider than the narrowest agent column; follow the
+    // anchor instead so it stays over its own panel.
+    content.set_width_request(anchor.width().clamp(280, 380));
 
     let models = Rc::new(state.registry.borrow().models.clone());
     let active = state.chat_model().map(|model| model.id);
@@ -203,7 +205,15 @@ pub fn show_picker(state: &Rc<UiState>, anchor: &gtk::Widget) {
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .max_content_height(420)
+        .max_content_height(
+            anchor
+                .display()
+                .monitors()
+                .item(0)
+                .and_then(|item| item.downcast::<gtk::gdk::Monitor>().ok())
+                .map(|monitor| (monitor.geometry().height() / 2).clamp(240, 420))
+                .unwrap_or(420),
+        )
         .propagate_natural_height(true)
         .child(&list)
         .build();

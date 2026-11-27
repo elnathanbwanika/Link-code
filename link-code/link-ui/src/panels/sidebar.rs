@@ -40,7 +40,7 @@ pub struct SidebarPanel {
 pub fn build(state: &Rc<UiState>) -> Rc<SidebarPanel> {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lc-sidebar");
-    root.set_width_request(260);
+    root.set_width_request(crate::window::SIDEBAR_MIN);
 
     let files_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     files_box.set_margin_start(4);

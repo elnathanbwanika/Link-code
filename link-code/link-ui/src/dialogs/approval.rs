@@ -69,6 +69,7 @@ fn show_modal(
         .default_width(480)
         .default_height(360)
         .build();
+    window.set_size_request(440, 380);
     window.add_css_class("lc-dialog");
     if let Some(parent) = parent {
         window.set_transient_for(Some(parent));
@@ -83,12 +84,15 @@ fn show_modal(
     header.set_title_widget(Some(&title));
     window.set_titlebar(Some(&header));
 
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lc-root");
-    root.set_margin_start(16);
-    root.set_margin_end(16);
-    root.set_margin_top(14);
-    root.set_margin_bottom(14);
+
+    // The details scroll; the action buttons stay pinned below them.
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    content.set_margin_start(16);
+    content.set_margin_end(16);
+    content.set_margin_top(14);
+    content.set_margin_bottom(14);
 
     // ---- risk + tool ----------------------------------------------------
     let meta = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -107,7 +111,7 @@ fn show_modal(
         locked.add_css_class("lc-error");
         meta.append(&locked);
     }
-    root.append(&meta);
+    content.append(&meta);
 
     let summary = gtk::Label::new(Some(&request.summary));
     summary.add_css_class("lc-heading");
@@ -115,7 +119,7 @@ fn show_modal(
     summary.set_wrap(true);
     summary.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     summary.set_selectable(true);
-    root.append(&summary);
+    content.append(&summary);
 
     if let Some(detail) = request.detail.as_deref().filter(|text| !text.trim().is_empty()) {
         let label = gtk::Label::new(Some(detail));
@@ -134,7 +138,7 @@ fn show_modal(
             .child(&label)
             .build();
         scroll.add_css_class("lc-card");
-        root.append(&scroll);
+        content.append(&scroll);
     }
 
     if !request.reasons.is_empty() {
@@ -148,7 +152,7 @@ fn show_modal(
             label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
             reasons.append(&label);
         }
-        root.append(&reasons);
+        content.append(&reasons);
     }
 
     if let Some(diff) = request.diff.as_deref().filter(|diff| !diff.trim().is_empty()) {
@@ -168,18 +172,31 @@ fn show_modal(
         let expander = gtk::Expander::new(Some("Proposed diff"));
         expander.add_css_class("lc-tiny");
         expander.set_child(Some(&scroll));
-        root.append(&expander);
+        content.append(&expander);
     }
 
     let feedback = gtk::Entry::new();
     feedback.set_placeholder_text(Some("Optional reason if you deny \u{00b7} Enter denies\u{2026}"));
     feedback.add_css_class("lc-input");
-    root.append(&feedback);
+    content.append(&feedback);
+
+    let body_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .max_content_height(420)
+        .propagate_natural_height(true)
+        .child(&content)
+        .build();
+    body_scroll.add_css_class("lc-dialog-scroll");
+    root.append(&body_scroll);
 
     // ---- actions --------------------------------------------------------
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     buttons.set_halign(gtk::Align::End);
     buttons.set_margin_top(4);
+    buttons.set_margin_start(16);
+    buttons.set_margin_end(16);
+    buttons.set_margin_bottom(14);
 
     let deny = gtk::Button::with_label("Deny");
     deny.add_css_class("lc-ghost");
@@ -376,6 +393,7 @@ fn show_question(
         .default_width(440)
         .default_height(220)
         .build();
+    window.set_size_request(360, 220);
     window.add_css_class("lc-dialog");
     if let Some(parent) = parent {
         window.set_transient_for(Some(parent));

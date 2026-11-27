@@ -82,6 +82,20 @@ pub struct TaskPanel {
     generation: Rc<Cell<u64>>,
 }
 
+/// Cap the checklist popover by both the panel and the monitor, so it never
+/// grows taller than the space available on screen.
+fn task_popover_height(panel: &gtk::Box) -> i32 {
+    let half_panel = (panel.height() / 2).max(120);
+    let monitor_limit = panel
+        .display()
+        .monitors()
+        .item(0)
+        .and_then(|item| item.downcast::<gtk::gdk::Monitor>().ok())
+        .map(|monitor| (monitor.geometry().height() / 2).max(160))
+        .unwrap_or(i32::MAX);
+    half_panel.min(monitor_limit)
+}
+
 impl TaskPanel {
     fn new(panel: &gtk::Box) -> Self {
         let menu = gtk::MenuButton::new();
@@ -158,7 +172,7 @@ impl TaskPanel {
             let popover_for_show = popover.clone();
             let focus = focus_row.clone();
             popover.connect_show(move |_| {
-                let max_height = (panel.height() / 2).max(120);
+                let max_height = task_popover_height(&panel);
                 scroll.set_max_content_height(max_height);
                 popover_for_show.set_size_request((panel.width() - 12).max(220), -1);
                 if let Some(row) = focus.borrow().clone() {
@@ -171,7 +185,7 @@ impl TaskPanel {
         {
             let scroll = scroll.clone();
             panel.connect_notify_local(Some("height"), move |panel, _| {
-                scroll.set_max_content_height((panel.height() / 2).max(120));
+                scroll.set_max_content_height(task_popover_height(panel));
             });
         }
 
@@ -339,75 +353,31 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lc-agent");
 
-    // ---- floating top row ----------------------------------------------
-    // A translucent strip over the conversation: sidebar toggle on the left,
-    // Browser + Terminal pill on the right. It floats so the chat itself gets
-    // the full height of the column.
-    let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    top_row.add_css_class("lc-agent-top");
-    top_row.set_valign(gtk::Align::Start);
-    top_row.set_halign(gtk::Align::Fill);
-    top_row.set_margin_start(8);
-    top_row.set_margin_end(8);
-    top_row.set_margin_top(6);
-    top_row.set_can_target(false);
+    // ---- header ---------------------------------------------------------
+    // A normal layout row, not an overlay: the conversation starts below it,
+    // so no magic top margin is needed and the toggle can never cover a
+    // message. Terminal stays available from the rail and the sidebar.
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    header.add_css_class("lc-agent-header");
+    header.set_margin_start(8);
+    header.set_margin_end(8);
+    header.set_margin_top(6);
+    header.set_margin_bottom(6);
 
     let sidebar_toggle = gtk::Button::from_icon_name("sidebar-show-symbolic");
-    sidebar_toggle.add_css_class("lc-agent-toggle");
+    sidebar_toggle.add_css_class("lc-agent-header-toggle");
     sidebar_toggle.set_tooltip_text(Some("Toggle sidebar (Ctrl+B)"));
     {
         let state = state.clone();
         sidebar_toggle.connect_clicked(move |_| crate::window::toggle_sidebar(&state));
     }
-    top_row.append(&sidebar_toggle);
-
-    let top_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    top_spacer.set_hexpand(true);
-    top_spacer.set_can_target(false);
-    top_row.append(&top_spacer);
-
-    let tools = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    tools.add_css_class("lc-agent-tools");
-    let browser = tool_pill(
-        "applications-internet-symbolic",
-        "Browser",
-        "Open http://localhost:3000 in your browser",
-    );
-    {
-        let state = state.clone();
-        browser.connect_clicked(move |_| {
-            let result = gtk::gio::AppInfo::launch_default_for_uri(
-                "http://localhost:3000",
-                None::<&gtk::gio::AppLaunchContext>,
-            );
-            if result.is_err() {
-                state.toast("Could not launch a browser");
-            }
-        });
-    }
-    tools.append(&browser);
-    let terminal_btn = tool_pill(
-        "utilities-terminal-symbolic",
-        "Terminal",
-        "Show the terminal (Ctrl+J)",
-    );
-    {
-        let state = state.clone();
-        terminal_btn.connect_clicked(move |_| {
-            if let Some(widgets) = state.widgets() {
-                widgets.bottom_root.set_visible(true);
-                widgets.bottom.focus_terminal();
-            }
-        });
-    }
-    tools.append(&terminal_btn);
-    top_row.append(&tools);
+    header.append(&sidebar_toggle);
 
     // ---- message log ----------------------------------------------------
     let chat_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
     chat_list.set_margin_start(10);
     chat_list.set_margin_end(10);
-    chat_list.set_margin_top(46);
+    chat_list.set_margin_top(6);
     chat_list.set_margin_bottom(6);
 
     let chat_scroll = gtk::ScrolledWindow::builder()
@@ -593,6 +563,7 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         gtk::pango::EllipsizeMode::End,
     );
     composer_model_button.add_css_class("lc-model-chip");
+    composer_model_button.set_width_request(96);
     composer_model_button.set_tooltip_text(Some("Select model"));
     {
         let state = state.clone();
@@ -608,6 +579,7 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
 
     let mode_button = gtk::Button::with_label(state.mode().label());
     mode_button.add_css_class("lc-mode-pill");
+    mode_button.set_width_request(88);
     mode_button.set_tooltip_text(Some(state.mode().description()));
     if state.mode() == PermissionMode::FullAuto {
         mode_button.add_css_class("full-auto");
@@ -686,16 +658,13 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
     input.add_controller(key);
 
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    body.set_vexpand(true);
+    body.append(&header);
     body.append(&chat_overlay);
     body.append(&activity);
     body.append(&suggestions_box);
     body.append(&composer_area);
-
-    let overlay = gtk::Overlay::new();
-    overlay.set_child(Some(&body));
-    overlay.add_overlay(&top_row);
-    overlay.set_vexpand(true);
-    root.append(&overlay);
+    root.append(&body);
 
     AgentPanel {
         root,
@@ -717,23 +686,6 @@ pub fn build(state: &Rc<UiState>) -> AgentPanel {
         attachments_box,
         attachments_scroll,
     }
-}
-
-/// Small icon + text button used inside the floating Browser/Terminal pill.
-fn tool_pill(icon: &str, label: &str, tooltip: &str) -> gtk::Button {
-    let button = gtk::Button::new();
-    button.set_tooltip_text(Some(tooltip));
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 5);
-    row.set_margin_start(9);
-    row.set_margin_end(10);
-    let image = gtk::Image::from_icon_name(icon);
-    image.set_pixel_size(15);
-    row.append(&image);
-    let text = gtk::Label::new(Some(label));
-    text.add_css_class("lc-tiny");
-    row.append(&text);
-    button.set_child(Some(&row));
-    button
 }
 
 // ---------------------------------------------------------------------------

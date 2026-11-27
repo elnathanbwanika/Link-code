@@ -21,6 +21,21 @@ use crate::state::UiState;
 const MAX_REPOS: usize = 120;
 /// Changes rendered at once; the count label still reports the true total.
 const MAX_CHANGES: usize = 300;
+/// Usable widths for the two sides of the Git splitter.
+const GIT_SIDE_MIN: i32 = 260;
+const GIT_MAIN_MIN: i32 = 320;
+
+fn clamp_columns(paned: &gtk::Paned) {
+    let total = paned.width();
+    if total <= 0 {
+        return;
+    }
+    let max = (total - GIT_MAIN_MIN).max(GIT_SIDE_MIN);
+    let target = paned.position().clamp(GIT_SIDE_MIN, max);
+    if target != paned.position() {
+        paned.set_position(target);
+    }
+}
 
 pub struct GitPanel {
     pub root: gtk::Box,
@@ -73,7 +88,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<GitPanel> {
     left.set_margin_end(6);
     left.set_margin_top(6);
     left.set_margin_bottom(6);
-    left.set_size_request(230, -1);
+    left.set_size_request(GIT_SIDE_MIN, -1);
 
     let account_head = gtk::Label::new(Some("GITHUB"));
     account_head.add_css_class("lc-section");
@@ -100,11 +115,13 @@ pub fn build(state: &Rc<UiState>) -> Rc<GitPanel> {
     token_entry.set_show_peek_icon(true);
     token_entry.set_placeholder_text(Some("GitHub access token"));
     token_entry.add_css_class("lc-input");
+    token_entry.set_size_request(140, -1);
     token_entry.set_hexpand(true);
     token_row.append(&token_entry);
     let connect_button = gtk::Button::with_label("Connect");
     connect_button.add_css_class("lc-primary");
     connect_button.add_css_class("lc-git-connect");
+    connect_button.set_width_request(80);
     token_row.append(&connect_button);
     left.append(&token_row);
 
@@ -209,14 +226,17 @@ pub fn build(state: &Rc<UiState>) -> Rc<GitPanel> {
     let message = gtk::Entry::new();
     message.set_placeholder_text(Some("Commit message"));
     message.add_css_class("lc-input");
+    message.set_width_chars(16);
     message.set_hexpand(true);
     commit_row.append(&message);
     let commit_button = gtk::Button::with_label("Commit");
     commit_button.add_css_class("lc-primary");
+    commit_button.set_width_request(80);
     commit_button.set_sensitive(false);
     commit_row.append(&commit_button);
     let push_button = gtk::Button::with_label("Push");
     push_button.add_css_class("lc-ghost");
+    push_button.set_width_request(64);
     push_button.set_sensitive(false);
     commit_row.append(&push_button);
     right.append(&commit_row);
@@ -224,6 +244,10 @@ pub fn build(state: &Rc<UiState>) -> Rc<GitPanel> {
     columns.set_start_child(Some(&left));
     columns.set_end_child(Some(&right));
     root.append(&columns);
+
+    // Keep both sides usable while the dialog is resized or the handle moved.
+    columns.connect_notify_local(Some("position"), |paned, _| clamp_columns(paned));
+    columns.connect_notify_local(Some("width"), |paned, _| clamp_columns(paned));
 
     let panel = Rc::new(GitPanel {
         root,
@@ -267,6 +291,18 @@ pub fn present(state: &Rc<UiState>) {
         .default_width(940)
         .default_height(600)
         .build();
+    window.set_size_request(GIT_SIDE_MIN + GIT_MAIN_MIN, 400);
+    if let Some(monitor) = gtk::prelude::WidgetExt::display(&window)
+        .monitors()
+        .item(0)
+        .and_then(|item| item.downcast::<gtk::gdk::Monitor>().ok())
+    {
+        let geometry = monitor.geometry();
+        window.set_default_size(
+            940.min((geometry.width() - 80).max(GIT_SIDE_MIN + GIT_MAIN_MIN)),
+            600.min((geometry.height() - 80).max(400)),
+        );
+    }
     window.add_css_class("lc-dialog");
     window.add_css_class("lc-git-window");
     if let Some(parent) = state.widgets().map(|widgets| widgets.window.clone()) {

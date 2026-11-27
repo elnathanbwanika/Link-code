@@ -619,6 +619,8 @@ fn open_path(state: &Rc<UiState>, path: &Path, allow_missing: bool) -> Option<Rc
     path_label.add_css_class("lc-tiny");
     path_label.add_css_class("lc-dim");
     path_label.set_xalign(0.0);
+    path_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    path_label.set_width_chars(20);
     page_header.append(&path_label);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
@@ -1648,6 +1650,8 @@ pub fn open_code_preview(state: &Rc<UiState>, tab_key: &str, label: &str, code: 
     path_label.add_css_class("lc-tiny");
     path_label.add_css_class("lc-dim");
     path_label.set_xalign(0.0);
+    path_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    path_label.set_width_chars(20);
     path_label.set_hexpand(true);
     page_header.append(&path_label);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);

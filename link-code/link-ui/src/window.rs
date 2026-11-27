@@ -30,17 +30,20 @@ use crate::widgets;
 /// Default window size: roughly a large terminal window, not a full-screen IDE.
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 620;
-/// Smallest size the three columns stay usable at.
-const MIN_WIDTH: i32 = 860;
+/// Smallest size the three columns stay usable at: rail + sidebar + editor +
+/// agent + the paned handle.
+const MIN_WIDTH: i32 = 880;
 const MIN_HEIGHT: i32 = 520;
 
-/// Minimum widths for the three columns, in pixels.
-const SIDEBAR_MIN: i32 = 200;
+/// Minimum widths for the three columns, in pixels. Shared with the panels so
+/// a widget request and a paned clamp can never disagree.
+pub(crate) const SIDEBAR_MIN: i32 = 200;
 const EDITOR_MIN: i32 = 320;
 const AGENT_MIN: i32 = 300;
-/// Height kept for the editor and the bottom panel.
+/// Height kept for the editor and the bottom panel. Shared with the bottom
+/// panel's own height request.
 const EDITOR_MIN_HEIGHT: i32 = 180;
-const BOTTOM_MIN_HEIGHT: i32 = 130;
+pub(crate) const BOTTOM_MIN_HEIGHT: i32 = 160;
 
 fn clamp_paned(paned: &gtk::Paned, start_min: i32, end_min: i32) {
     let total = if paned.orientation() == gtk::Orientation::Horizontal {
@@ -89,23 +92,27 @@ impl LinkWindow {
             .default_width(DEFAULT_WIDTH)
             .default_height(DEFAULT_HEIGHT)
             .build();
-        window.set_size_request(MIN_WIDTH, MIN_HEIGHT);
         window.add_css_class("lc-root");
 
-        // Do not swallow the screen on a small display: shrink the default
-        // size to fit inside the monitor with some margin to spare.
-        if let Some(monitor) = gtk::prelude::WidgetExt::display(&window)
+        // Fit the monitor instead of forcing a window larger than the screen.
+        // The size request may fall below MIN_WIDTH on a small display; the
+        // paned clamps still keep the three columns usable.
+        let available = gtk::prelude::WidgetExt::display(&window)
             .monitors()
             .item(0)
             .and_then(|item| item.downcast::<gtk::gdk::Monitor>().ok())
-        {
-            let geometry = monitor.geometry();
-            let width = (geometry.width() - 160).max(MIN_WIDTH);
-            let height = (geometry.height() - 160).max(MIN_HEIGHT);
-            if width < DEFAULT_WIDTH || height < DEFAULT_HEIGHT {
-                window.set_default_size(DEFAULT_WIDTH.min(width), DEFAULT_HEIGHT.min(height));
-            }
-        }
+            .map(|monitor| {
+                let geometry = monitor.geometry();
+                (geometry.width() - 80, geometry.height() - 80)
+            });
+        let (available_width, available_height) = available.unwrap_or((i32::MAX, i32::MAX));
+        let width_request = MIN_WIDTH.min(available_width.max(640));
+        let height_request = MIN_HEIGHT.min(available_height.max(420));
+        window.set_size_request(width_request, height_request);
+        window.set_default_size(
+            DEFAULT_WIDTH.min(available_width.max(width_request)),
+            DEFAULT_HEIGHT.min(available_height.max(height_request)),
+        );
 
         let toolbar = adw::ToolbarView::new();
 

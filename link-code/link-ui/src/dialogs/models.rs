@@ -545,6 +545,7 @@ impl Form {
         // ---- name ------------------------------------------------------
         let name_card = form_card("NAME", &root);
         let display = entry("e.g. Claude Sonnet");
+        display.set_width_chars(18);
         name_card.append(&display);
         let name_hint = gtk::Label::new(Some("Shown in the model selector and chat header."));
         name_hint.add_css_class("lc-form-hint");
@@ -554,6 +555,7 @@ impl Form {
         // ---- base URL --------------------------------------------------
         let url_card = form_card("BASE URL", &root);
         let base_url = entry("https://api.example.com/v1");
+        base_url.set_width_chars(20);
         url_card.append(&base_url);
         let url_hint = gtk::Label::new(Some(
             "Paste an endpoint, or leave the provider default. Local servers need no key.",
@@ -573,6 +575,7 @@ impl Form {
         let key_link = gtk::Button::with_label("Get API key");
         key_link.add_css_class("lc-link");
         key_link.set_has_frame(false);
+        key_link.set_width_request(88);
         key_head.append(&key_link);
         key_card.append(&key_head);
 
@@ -583,6 +586,7 @@ impl Form {
         let add_key = gtk::Button::with_label("Add key");
         add_key.add_css_class("lc-accent-outline");
         add_key.set_tooltip_text(Some("Add another API key for this base URL"));
+        add_key.set_width_request(96);
         key_foot.append(&add_key);
         let key_hint = gtk::Label::new(None);
         key_hint.add_css_class("lc-form-hint");
@@ -605,10 +609,12 @@ impl Form {
         let model_card = form_card("MODEL", &root);
         let model_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let model_id = entry("model-id");
+        model_id.set_width_chars(14);
         model_id.set_hexpand(true);
         model_row.append(&model_id);
         let load_models = gtk::Button::new();
         load_models.add_css_class("lc-accent-outline");
+        load_models.set_width_request(104);
         let load_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         load_row.set_valign(gtk::Align::Center);
         let cloud = gtk::Image::from_icon_name("folder-download-symbolic");
@@ -830,6 +836,7 @@ impl Form {
         let entry = entry("sk-...");
         entry.set_visibility(false);
         entry.set_input_purpose(gtk::InputPurpose::Password);
+        entry.set_width_chars(12);
         entry.set_hexpand(true);
         if !secret.is_empty() {
             entry.set_text(secret);
@@ -983,6 +990,7 @@ fn present_form(state: &Rc<UiState>, editing: Option<ModelConfig>, on_saved: Rc<
         .default_width(520)
         .default_height(600)
         .build();
+    window.set_size_request(480, 520);
     window.add_css_class("lc-dialog");
     window.add_css_class("lc-providers");
     if let Some(parent) = state.widgets().map(|widgets| widgets.window.clone()) {

@@ -73,7 +73,7 @@ impl BottomPanel {
 pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lc-bottom");
-    root.set_height_request(160);
+    root.set_height_request(crate::window::BOTTOM_MIN_HEIGHT);
 
     let notebook = gtk::Notebook::new();
     notebook.set_scrollable(true);
@@ -105,6 +105,7 @@ pub fn build(state: &Rc<UiState>) -> Rc<BottomPanel> {
     shell_label.add_css_class("lc-tiny");
     shell_label.add_css_class("lc-terminal-path");
     shell_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+    shell_label.set_width_chars(24);
     shell_label.set_hexpand(true);
     shell_label.set_xalign(0.0);
     shell_label.set_margin_start(6);
