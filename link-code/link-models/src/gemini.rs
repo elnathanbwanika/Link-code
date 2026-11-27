@@ -235,7 +235,25 @@ impl ModelProvider for GeminiProvider {
     async fn list_models(&self) -> ModelResult<Vec<ModelInfo>> {
         let base = self.config.base_url.trim_end_matches('/');
         let url = format!("{base}/v1beta/models");
-        let value = self.http.get_json(&url).await?;
+        // Google only accepts API keys in `x-goog-api-key` (or `?key=`). The
+        // shared `get_json` helper sends OpenAI-style `Authorization: Bearer`
+        // and `api-key` headers, which Google answers with a misleading
+        // "API key not valid" 403 — even for a perfectly valid AI Studio key.
+        let response = self
+            .headers(self.http.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| LinkModelError::Connection {
+                url: url.clone(),
+                source: Box::new(e),
+            })?;
+        let value = self
+            .http
+            .check(&url, response)
+            .await?
+            .json::<Value>()
+            .await
+            .map_err(|e| LinkModelError::Malformed(format!("expected JSON from {url}: {e}")))?;
         let mut models = Vec::new();
         for entry in value.get("models").and_then(Value::as_array).cloned().unwrap_or_default() {
             let Some(name) = entry.get("name").and_then(Value::as_str) else {

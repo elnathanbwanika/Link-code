@@ -40,6 +40,28 @@ pub fn normalize_base_url(kind: ProviderKind, raw: &str) -> String {
     if base.is_empty() {
         return base;
     }
+    if kind == ProviderKind::Gemini {
+        // AI Studio's "copy URL" can include a query string or a full
+        // generateContent endpoint. Keep the root so the adapter can append
+        // `/v1beta/models/<id>:<method>` exactly once.
+        if let Some((head, _)) = base.split_once('?') {
+            base = head.trim_end_matches('/').to_string();
+        }
+        for suffix in [":streamGenerateContent", ":generateContent"] {
+            if let Some(stripped) = base.strip_suffix(suffix) {
+                base = stripped
+                    .rsplit_once('/')
+                    .map(|(prefix, _)| prefix)
+                    .unwrap_or(stripped)
+                    .trim_end_matches('/')
+                    .to_string();
+                break;
+            }
+        }
+        if let Some((prefix, _)) = base.split_once("/models/") {
+            base = prefix.trim_end_matches('/').to_string();
+        }
+    }
     // Strip a pasted endpoint so the adapter can append its own path.
     for suffix in [
         "/chat/completions",
@@ -953,5 +975,35 @@ mod tests {
         let mut anthropic = ModelConfig::new("a", ProviderKind::Anthropic, "m");
         anthropic.base_url = "https://api.anthropic.com/v1".to_string();
         assert_eq!(anthropic.chat_url(), "https://api.anthropic.com/v1/messages");
+    }
+
+    #[test]
+    fn copied_gemini_urls_are_reduced_to_the_root() {
+        let root = "https://generativelanguage.googleapis.com";
+        assert_eq!(normalize_base_url(ProviderKind::Gemini, root), root);
+        assert_eq!(
+            normalize_base_url(ProviderKind::Gemini, &format!("{root}/v1beta")),
+            root
+        );
+        assert_eq!(
+            normalize_base_url(
+                ProviderKind::Gemini,
+                &format!("{root}/v1beta/models/gemini-2.0-flash")
+            ),
+            root
+        );
+        assert_eq!(
+            normalize_base_url(
+                ProviderKind::Gemini,
+                &format!("{root}/v1beta/models/gemini-2.0-flash:generateContent?key=abc")
+            ),
+            root
+        );
+        let mut config = ModelConfig::new("g", ProviderKind::Gemini, "gemini-2.0-flash");
+        config.base_url = format!("{root}/v1beta/models/gemini-2.0-flash:generateContent");
+        assert_eq!(
+            config.chat_url(),
+            format!("{root}/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse")
+        );
     }
 }

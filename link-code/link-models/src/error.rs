@@ -31,7 +31,7 @@ pub enum LinkModelError {
         body: String,
     },
 
-    #[error("the endpoint rejected the API key (HTTP {status}) at {url}: {body}")]
+    #[error("the endpoint rejected the request (HTTP {status}) at {url}: {body}")]
     Auth {
         status: u16,
         url: String,
@@ -106,11 +106,19 @@ impl LinkModelError {
     /// request being malformed or the endpoint being unreachable.
     ///
     /// This is the signal the key-pool provider uses to move to the next key:
-    /// rejected credentials (401/403), rate limits (429) and payment/quota
-    /// failures (402, or a body that talks about quota, credits or billing).
+    /// rejected credentials (401, or 403 whose body names a key/quota problem),
+    /// rate limits (429) and payment/quota failures (402, or a body that talks
+    /// about quota, credits or billing). Generic 403s are left alone.
     pub fn is_key_exhaustion(&self) -> bool {
         match self {
-            LinkModelError::Auth { .. } | LinkModelError::RateLimit { .. } => true,
+            // A 401 is always a credential problem. A 403 often is not: Google,
+            // for example, uses it for a disabled API, an unsupported region or
+            // a restricted key. Rotating keys in those cases burns perfectly
+            // valid credentials and reports all of them as "rejected".
+            LinkModelError::Auth { status, body, .. } => {
+                *status == 401 || (*status == 403 && looks_like_key_exhaustion(body))
+            }
+            LinkModelError::RateLimit { .. } => true,
             LinkModelError::Http { status, body, .. } => {
                 *status == 402 || looks_like_key_exhaustion(body)
             }
@@ -194,6 +202,7 @@ pub fn looks_like_key_exhaustion(body: &str) -> bool {
         "account is out of",
         "key has been revoked",
         "invalid api key",
+        "invalid_api_key",
         "incorrect api key",
         "api key not valid",
     ]
@@ -207,4 +216,32 @@ fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     }
     // HTTP-date form is rare; fall back to a sane default.
     Some(Duration::from_secs(5))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn auth(status: u16, body: &str) -> LinkModelError {
+        LinkModelError::Auth {
+            status,
+            url: "https://generativelanguage.googleapis.com/v1beta/models".into(),
+            body: body.into(),
+        }
+    }
+
+    #[test]
+    fn credential_failures_rotate_keys() {
+        assert!(auth(401, "unauthorized").is_key_exhaustion());
+        assert!(auth(403, "API key not valid. Please pass a valid API key.").is_key_exhaustion());
+        assert!(auth(403, "invalid_api_key").is_key_exhaustion());
+        assert!(auth(403, "RESOURCE_EXHAUSTED: quota exceeded").is_key_exhaustion());
+    }
+
+    #[test]
+    fn unrelated_403s_do_not_burn_valid_keys() {
+        assert!(!auth(403, "Generative Language API has not been used in project 123").is_key_exhaustion());
+        assert!(!auth(403, "The request was blocked because of the user's location").is_key_exhaustion());
+        assert!(!auth(403, "API key has an HTTP referrer restriction").is_key_exhaustion());
+    }
 }

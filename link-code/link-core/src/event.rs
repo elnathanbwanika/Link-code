@@ -118,7 +118,7 @@ impl ErrorKind {
     pub fn headline(self) -> &'static str {
         match self {
             ErrorKind::Connection => "Could not reach the model endpoint",
-            ErrorKind::Auth => "The endpoint rejected the API key",
+            ErrorKind::Auth => "The endpoint rejected the request — check the API key or project access",
             ErrorKind::MissingApiKey => "No API key is configured",
             ErrorKind::RateLimit => "Rate limited by the provider",
             ErrorKind::ContextOverflow => "The conversation no longer fits in the context window",
