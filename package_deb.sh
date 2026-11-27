@@ -2,11 +2,13 @@
 # package_deb.sh — build a .deb installer for link-code
 set -euo pipefail
 
-BINARY=/workspaces/Link-code/link-code/target/release/link-code
-VERSION=1.0.30
-ARCH=amd64
+# Paths and version can be overridden by CI (see .github/workflows/build-deb.yml).
+BINARY="${BINARY:-/workspaces/Link-code/link-code/target/release/link-code}"
+VERSION="${VERSION:-1.0.30}"
+ARCH="${ARCH:-amd64}"
 PKGNAME=link-code
-PKGDIR=/tmp/link-code-deb
+PKGDIR="${PKGDIR:-/tmp/link-code-deb}"
+OUT_DIR="${OUT_DIR:-/tmp/opencode}"
 
 # -- Verify the binary exists --------------------------------------------------
 if [[ ! -f "$BINARY" ]]; then
@@ -69,7 +71,7 @@ cp "$PKGDIR/usr/share/icons/hicolor/scalable/apps/link-code.svg" \
 # NOTE: do NOT copy the .desktop file — one .desktop = one launcher icon
 
 # -- AppStream metainfo --------------------------------------------------------
-cat > "$PKGDIR/usr/share/metainfo/org.linkecosystem.LinkCode.metainfo.xml" <<'META'
+cat > "$PKGDIR/usr/share/metainfo/org.linkecosystem.LinkCode.metainfo.xml" <<META
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>org.linkecosystem.LinkCode</id>
@@ -78,7 +80,7 @@ cat > "$PKGDIR/usr/share/metainfo/org.linkecosystem.LinkCode.metainfo.xml" <<'ME
   <description><p>Link Code is a GTK4 + libadwaita native IDE that pairs you with AI models for fast, agentic coding.</p></description>
   <url type="homepage">https://github.com/tracerdasu43/Link-code</url>
   <releases>
-    <release version="1.0.26" date="2026-11-20"/>
+    <release version="$VERSION" date="$(date -u +%Y-%m-%d)"/>
   </releases>
   <content_rating type="oars-1.1"/>
 </component>
@@ -129,7 +131,8 @@ chmod 755 "$PKGDIR/DEBIAN/postinst"
 # -- Build the .deb ------------------------------------------------------------
 # Keep the workspace clean: the installer is built outside the repo and is
 # published to the GitHub release, not kept in the source tree.
-OUT="/tmp/opencode/${PKGNAME}_${VERSION}_${ARCH}.deb"
+mkdir -p "$OUT_DIR"
+OUT="$OUT_DIR/${PKGNAME}_${VERSION}_${ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKGDIR" "$OUT"
 echo ""
 echo "✅  Package built: $OUT"

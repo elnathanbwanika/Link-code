@@ -1,0 +1,64 @@
+name: Build .deb
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+
+    env:
+      # GitHub's workspace path differs from the local machine path.
+      BINARY: ${{ github.workspace }}/link-code/target/release/link-code
+      # Tag pushes (v1.0.31) set the package version; branch pushes use the
+      # VERSION default in package_deb.sh.
+      VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+      OUT_DIR: ${{ github.workspace }}/dist
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install GTK build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libsecret-1-dev \
+            libglib2.0-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: link-code -> target
+
+      - name: Build release binary
+        working-directory: link-code
+        run: cargo build --release --locked
+
+      - name: Package .deb
+        run: bash package_deb.sh
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: link-code-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+      - name: Attach .deb to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          generate_release_notes: true
