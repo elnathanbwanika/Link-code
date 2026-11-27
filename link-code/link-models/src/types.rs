@@ -55,6 +55,11 @@ pub struct ToolCallRequest {
     pub name: String,
     #[serde(default)]
     pub arguments: String,
+    /// Gemini 4/3 encrypted reasoning signature attached to a `functionCall`
+    /// part. It must be replayed verbatim in the next request or Google
+    /// rejects the turn with HTTP 400. Older sessions may not have one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 impl ToolCallRequest {
@@ -63,6 +68,7 @@ impl ToolCallRequest {
             id: id.into(),
             name: name.into(),
             arguments: arguments.into(),
+            thought_signature: None,
         }
     }
 
@@ -320,6 +326,13 @@ pub enum StreamEvent {
         id: Option<String>,
         name: Option<String>,
         arguments_delta: String,
+    },
+    /// Gemini-only: the encrypted signature that belongs to a function-call
+    /// part. It is emitted once per response and attached to the call at
+    /// `index` by the shared accumulator.
+    ToolCallSignature {
+        index: usize,
+        signature: String,
     },
     Usage(Usage),
     Done { finish_reason: FinishReason },

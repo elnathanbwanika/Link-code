@@ -890,7 +890,8 @@ impl AgentLoop {
                             thinking.push_str(&text);
                             self.sink.emit(AgentEvent::ThinkingDelta { block_id, text });
                         }
-                        StreamEvent::ToolCallDelta { .. } => {
+                        StreamEvent::ToolCallDelta { .. }
+                        | StreamEvent::ToolCallSignature { .. } => {
                             accumulator.push(&event);
                             if let StreamEvent::ToolCallDelta {
                                 index,

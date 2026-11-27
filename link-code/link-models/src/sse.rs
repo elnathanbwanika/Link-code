@@ -50,6 +50,7 @@ struct PartialCall {
     id: Option<String>,
     name: Option<String>,
     arguments: String,
+    thought_signature: Option<String>,
 }
 
 /// Assembles the `tool_calls` fragments every OpenAI-compatible server emits.
@@ -72,25 +73,33 @@ impl ToolCallAccumulator {
 
     /// Feed one fragment.
     pub fn push(&mut self, event: &StreamEvent) {
-        if let StreamEvent::ToolCallDelta {
-            index,
-            id,
-            name,
-            arguments_delta,
-        } = event
-        {
-            let entry = self.calls.entry(*index).or_default();
-            if let Some(id) = id {
-                if !id.is_empty() {
-                    entry.id = Some(id.clone());
+        match event {
+            StreamEvent::ToolCallDelta {
+                index,
+                id,
+                name,
+                arguments_delta,
+            } => {
+                let entry = self.calls.entry(*index).or_default();
+                if let Some(id) = id {
+                    if !id.is_empty() {
+                        entry.id = Some(id.clone());
+                    }
+                }
+                if let Some(name) = name {
+                    if !name.is_empty() {
+                        entry.name = Some(name.clone());
+                    }
+                }
+                entry.arguments.push_str(arguments_delta);
+            }
+            StreamEvent::ToolCallSignature { index, signature } => {
+                let entry = self.calls.entry(*index).or_default();
+                if !signature.is_empty() {
+                    entry.thought_signature = Some(signature.clone());
                 }
             }
-            if let Some(name) = name {
-                if !name.is_empty() {
-                    entry.name = Some(name.clone());
-                }
-            }
-            entry.arguments.push_str(arguments_delta);
+            _ => {}
         }
     }
 
@@ -117,6 +126,7 @@ impl ToolCallAccumulator {
                 id: partial.id.unwrap_or_else(|| format!("call_{index}")),
                 name: partial.name.unwrap_or_default(),
                 arguments: partial.arguments,
+                thought_signature: partial.thought_signature,
             })
             .filter(|call| !call.name.is_empty())
             .collect()
@@ -599,7 +609,8 @@ pub fn finish_reason(value: Option<&str>) -> FinishReason {
 
 #[cfg(test)]
 mod tests {
-    use super::partial_json_string;
+    use super::{partial_json_string, ToolCallAccumulator};
+    use crate::types::StreamEvent;
 
     #[test]
     fn extracts_a_field_from_a_partial_object() {
@@ -637,6 +648,25 @@ mod tests {
     #[test]
     fn returns_none_until_the_field_appears() {
         assert_eq!(partial_json_string("{\"pa", "path"), None);
+    }
+
+    #[test]
+    fn accumulator_attaches_signature_to_its_function_call() {
+        let mut accumulator = ToolCallAccumulator::new();
+        accumulator.push(&StreamEvent::ToolCallDelta {
+            index: 0,
+            id: Some("call_0".to_string()),
+            name: Some("list_dir".to_string()),
+            arguments_delta: "{\"path\":\".\"}".to_string(),
+        });
+        accumulator.push(&StreamEvent::ToolCallSignature {
+            index: 0,
+            signature: "sig-from-google".to_string(),
+        });
+
+        let calls = accumulator.finish();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].thought_signature.as_deref(), Some("sig-from-google"));
     }
 }
 
