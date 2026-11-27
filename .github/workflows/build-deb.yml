@@ -42,6 +42,10 @@ jobs:
         with:
           workspaces: link-code -> target
 
+      - name: Test model and core crates
+        working-directory: link-code
+        run: cargo test --locked -p link-models -p link-core
+
       - name: Build release binary
         working-directory: link-code
         run: cargo build --release --locked
