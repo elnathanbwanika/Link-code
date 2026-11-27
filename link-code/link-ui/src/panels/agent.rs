@@ -17,7 +17,7 @@ use link_core::event::{AgentEvent, DoneReason, ErrorKind, TodoItem, TodoStatus};
 use link_core::paths::Sandbox;
 use link_core::permission::{PermissionEngine, PermissionMode, PermissionRules};
 use link_core::project::{ProjectMemory, WorkspaceSettings};
-use link_core::session::{Session, StoredRole};
+use link_core::session::Session;
 use link_core::tool::ToolContext;
 use link_models::types::ChatMessage;
 
@@ -982,9 +982,9 @@ knowledge in:
             }
         }
         parts.push(SKILLS_ADDENDUM.to_string());
-        // A reopened conversation carries its checklist and stopping point, so
-        // the model continues instead of repeating finished work.
-        if let Some(resume) = state.session_resume_prompt() {
+        // Reopened conversations and model switches get one continuation
+        // prompt; ordinary turns do not, so new coding requests stay fresh.
+        if let Some(resume) = state.take_session_resume_prompt() {
             parts.push(resume);
         }
         Some(parts.join("\n\n"))
@@ -1063,15 +1063,7 @@ knowledge in:
 }
 
 fn build_history(session: &Session) -> Vec<ChatMessage> {
-    session
-        .messages
-        .iter()
-        .filter_map(|message| match message.role {
-            StoredRole::User => Some(ChatMessage::user(message.content.clone())),
-            StoredRole::Assistant => Some(ChatMessage::assistant(message.content.clone())),
-            _ => None,
-        })
-        .collect()
+    session.chat_history()
 }
 
 fn merge_rules(base: &PermissionRules, workspace: &std::path::Path) -> PermissionRules {
@@ -1194,7 +1186,11 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
             tool,
             summary,
             args,
+            thought_signature,
         } => {
+            // Store the call before any early return: even `update_tasks` and
+            // unknown tools are part of what the next model needs to know.
+            state.push_tool_call(&call_id, &tool, &args, thought_signature);
             // `update_tasks` has no chip: its payload lands in the pinned
             // TASKS checklist through `TodosUpdated`.
             if tool == "update_tasks" {
@@ -1278,6 +1274,7 @@ pub fn handle_event(state: &Rc<UiState>, event: AgentEvent) {
             duration_ms,
             truncated: _,
         } => {
+            state.push_tool_result(&call_id, &tool, &content);
             let chip = state.edits.borrow().get(&call_id).cloned();
             if let Some(chip) = &chip {
                 chip.set_status(if ok {

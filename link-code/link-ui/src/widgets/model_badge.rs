@@ -327,7 +327,10 @@ fn model_card(
         let id = model.id.clone();
         card.connect_clicked(move |_| {
             state.set_chat_model(&id);
-            state.toast(&format!("Chat model: {}", state.chat_model_label()));
+            state.toast(&format!(
+                "Chat model: {} — next message continues this conversation",
+                state.chat_model_label()
+            ));
             popover.popdown();
         });
     }

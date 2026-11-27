@@ -186,6 +186,8 @@ pub enum AgentEvent {
         /// One-line, human-readable summary, e.g. ``read `src/main.rs` (lines 1-120)``.
         summary: String,
         args: serde_json::Value,
+        /// Gemini's encrypted signature for this call, replayed on later turns.
+        thought_signature: Option<String>,
     },
     ToolStatusChanged {
         call_id: String,

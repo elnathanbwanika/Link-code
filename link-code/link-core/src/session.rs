@@ -14,6 +14,8 @@ use crate::config::{data_dir, write_json_atomic};
 use crate::error::{LinkError, Result};
 use crate::event::{TodoItem, TodoStatus};
 use crate::permission::PermissionMode;
+use link_models::types::{ChatMessage, Role, ToolCallRequest};
+
 use crate::DATA_FORMAT_VERSION;
 
 /// Who produced a stored message.
@@ -52,6 +54,9 @@ pub struct StoredMessage {
     pub tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Tool calls requested by an assistant turn, including Gemini's signature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCallRequest>,
     /// Workspace-relative paths attached with `@` or pinned with `#`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<String>,
@@ -68,6 +73,7 @@ impl StoredMessage {
             model: None,
             tool_name: None,
             tool_call_id: None,
+            tool_calls: Vec::new(),
             attachments: Vec::new(),
             created_at: Utc::now(),
         }
@@ -82,9 +88,18 @@ impl StoredMessage {
             model: Some(model.into()),
             tool_name: None,
             tool_call_id: None,
+            tool_calls: Vec::new(),
             attachments: Vec::new(),
             created_at: Utc::now(),
         }
+    }
+
+    /// A tool-only assistant step. Tool results are stored separately so the
+    /// next model sees the same call/result sequence the previous one saw.
+    pub fn tool_call(call: ToolCallRequest, model: impl Into<String>) -> Self {
+        let mut message = Self::assistant("", model);
+        message.tool_calls.push(call);
+        message
     }
 
     pub fn tool_result(call_id: impl Into<String>, tool: impl Into<String>, content: impl Into<String>) -> Self {
@@ -96,6 +111,7 @@ impl StoredMessage {
             model: None,
             tool_name: Some(tool.into()),
             tool_call_id: Some(call_id.into()),
+            tool_calls: Vec::new(),
             attachments: Vec::new(),
             created_at: Utc::now(),
         }
@@ -110,6 +126,7 @@ impl StoredMessage {
             model: None,
             tool_name: None,
             tool_call_id: None,
+            tool_calls: Vec::new(),
             attachments: Vec::new(),
             created_at: Utc::now(),
         }
@@ -335,6 +352,51 @@ impl Session {
             .iter()
             .filter(|item| item.status != TodoStatus::Done)
             .count()
+    }
+
+    /// Rebuild the exact provider history: user turns, assistant turns with
+    /// their tool calls, and tool results in their original order. Old
+    /// sessions without stored tool calls still load and produce text history.
+    pub fn chat_history(&self) -> Vec<ChatMessage> {
+        let mut history: Vec<ChatMessage> = Vec::new();
+        for stored in &self.messages {
+            match stored.role {
+                // The system prompt is rebuilt for every turn from config and
+                // project memory; sending it twice makes some providers reject
+                // the request.
+                StoredRole::System => continue,
+                StoredRole::User => history.push(ChatMessage::user(stored.content.clone())),
+                StoredRole::Assistant => {
+                    if stored.tool_calls.is_empty() && stored.content.trim().is_empty() {
+                        continue;
+                    }
+                    let mut message = ChatMessage::assistant(stored.content.clone());
+                    message.tool_calls = stored.tool_calls.clone();
+                    // Several tool-only steps in one round are stored as
+                    // separate messages; merge them so providers see one
+                    // assistant turn with all its calls before the results.
+                    if let Some(last) = history.last_mut() {
+                        if last.role == Role::Assistant && !stored.tool_calls.is_empty() {
+                            last.tool_calls.extend(message.tool_calls);
+                            if !message.content.is_empty() {
+                                if !last.content.is_empty() {
+                                    last.content.push('\n');
+                                }
+                                last.content.push_str(&message.content);
+                            }
+                            continue;
+                        }
+                    }
+                    history.push(message);
+                }
+                StoredRole::Tool => history.push(ChatMessage::tool_result(
+                    stored.tool_call_id.clone().unwrap_or_default(),
+                    stored.tool_name.clone().unwrap_or_default(),
+                    stored.content.clone(),
+                )),
+            }
+        }
+        history
     }
 
     /// True when the session carries enough state to resume meaningfully.
@@ -607,6 +669,37 @@ mod tests {
         assert_eq!(loaded.messages.len(), 2);
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.messages[1].model.as_deref(), Some("ollama:qwen2.5-coder:32b"));
+    }
+
+    #[test]
+    fn chat_history_restores_tool_calls_results_and_signatures() {
+        let dir = workspace();
+        let mut session = Session::new(dir.path(), "gemini");
+        session.push_user("fix the bug");
+
+        let mut first = ToolCallRequest::new("c1", "list_dir", "{}");
+        first.thought_signature = Some("sig-1".to_string());
+        session.push(StoredMessage::tool_call(first, "gemini"));
+        session.push(StoredMessage::tool_result("c1", "list_dir", "{\"files\":[\"a.rs\"]}"));
+
+        let mut second = ToolCallRequest::new("c2", "read_file", "{\"path\":\"a.rs\"}");
+        second.thought_signature = Some("sig-2".to_string());
+        session.push(StoredMessage::tool_call(second, "gemini"));
+        session.push(StoredMessage::tool_result("c2", "read_file", "bug on line 4"));
+        session.push(StoredMessage::assistant("Found it: line 4.", "gemini"));
+
+        let history = session.chat_history();
+        assert_eq!(history.len(), 5);
+        assert_eq!(history[0].content, "fix the bug");
+        assert_eq!(history[1].tool_calls.len(), 1);
+        assert_eq!(
+            history[1].tool_calls[0].thought_signature.as_deref(),
+            Some("sig-1")
+        );
+        assert_eq!(history[2].role, Role::Tool);
+        assert_eq!(history[2].tool_call_id.as_deref(), Some("c1"));
+        assert_eq!(history[3].tool_calls[0].name, "read_file");
+        assert_eq!(history[4].content, "Found it: line 4.");
     }
 
     #[test]

@@ -370,8 +370,11 @@ fn provider_card(
         let refresh = refresh.clone();
         let model = model.clone();
         Rc::new(move || {
-            state.set_chat_model(&model.id);
-            state.toast(&format!("Chat model: {}", state.chat_model_label()));
+        state.set_chat_model(&model.id);
+        state.toast(&format!(
+            "Chat model: {} — next message continues this conversation",
+            state.chat_model_label()
+        ));
             refresh();
         })
     };
@@ -647,7 +650,7 @@ impl Form {
         adv.append(&form_row("Temperature", &temperature));
 
         let tools_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let tools_label = gtk::Label::new(Some("Tool calling"));
+        let tools_label = gtk::Label::new(Some("Tool calling (code editing)"));
         tools_label.add_css_class("lc-tiny");
         tools_label.add_css_class("lc-dim");
         tools_label.set_xalign(0.0);
@@ -656,10 +659,12 @@ impl Form {
         let tools = gtk::Switch::new();
         tools.set_active(true);
         tools.set_halign(gtk::Align::End);
-        tools.set_tooltip_text(Some(
-            "Offer file, search and shell tools to this model. Turn off only for \
-             endpoints that fail whenever a tools field is present.",
-        ));
+    tools.set_tooltip_text(Some(
+        "Offer file, search and shell tools to this model. Keep this on for \
+         coding: turning it off prevents the model from reading or writing any \
+         file. Turn off only for endpoints that fail whenever a tools field is \
+         present.",
+    ));
         tools_row.append(&tools);
         adv.append(&tools_row);
 

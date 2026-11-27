@@ -17,10 +17,11 @@ use link_core::config::{config_dir, Config, ConfigStore};
 use link_core::event::TodoItem;
 use link_core::permission::PermissionMode;
 use link_core::secrets::{self, SecretStore};
-use link_core::session::{Session, SessionStore};
+use link_core::session::{Session, SessionStore, StoredMessage};
 use link_models::registry::{ApiKeyPool, ModelConfig, ModelRegistry, ModelRole, ProviderKind};
 use link_models::{
-    KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, ModelProvider, RotatingProvider,
+    KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, ModelProvider, RetryNotice, RetryObserver,
+    RotatingProvider, ToolCallRequest,
 };
 use uuid::Uuid;
 
@@ -193,6 +194,10 @@ pub struct UiState {
     pub cost: Cell<f64>,
     /// Width of the agent column when it was last hidden, restored on show.
     pub agent_width: Cell<i32>,
+    /// True when the next turn should receive a one-shot continuation prompt.
+    pub session_handoff: Cell<bool>,
+    /// Whether that handoff was caused by changing the chat model.
+    pub handoff_from_model_change: Cell<bool>,
 
     pub widgets: RefCell<Option<Rc<Widgets>>>,
     pub blocks: RefCell<HashMap<Uuid, Rc<BlockView>>>,
@@ -260,6 +265,8 @@ impl UiState {
             context_max: Cell::new(0),
             cost: Cell::new(0.0),
             agent_width: Cell::new(420),
+            session_handoff: Cell::new(false),
+            handoff_from_model_change: Cell::new(false),
             widgets: RefCell::new(None),
             blocks: RefCell::new(HashMap::new()),
             block_order: RefCell::new(Vec::new()),
@@ -372,6 +379,21 @@ impl UiState {
         let registry = self.registry.borrow().clone();
         let _ = save_registry(&registry);
         self.refresh_model_badges();
+
+        // A model change inside an existing conversation is a handoff, not a
+        // new task. The next turn gets one prompt explaining the earlier work.
+        let label = self.chat_model_label();
+        let mut slot = self.session.borrow_mut();
+        if let Some(session) = slot.as_mut() {
+            if !session.messages.is_empty() {
+                session.model = label;
+                session.touch();
+                self.session_handoff.set(true);
+                self.handoff_from_model_change.set(true);
+            }
+        }
+        drop(slot);
+        self.save_session();
     }
 
     // ---- API-key pools --------------------------------------------------
@@ -560,7 +582,8 @@ impl UiState {
     pub fn rotating_provider(self: &Rc<Self>, model: &ModelConfig) -> Arc<dyn ModelProvider> {
         let pool = self.build_key_pool(model);
         let observer = self.key_pool_observer();
-        Arc::new(RotatingProvider::new(model.clone(), pool, observer))
+        let retry_observer = self.retry_observer();
+        Arc::new(RotatingProvider::new(model.clone(), pool, observer).with_retry_observer(retry_observer))
     }
 
     /// A one-shot rotating provider built from typed keys, for "Load models"
@@ -607,6 +630,25 @@ impl UiState {
         Some(Arc::new(move |update| {
             let _ = tx.send(update);
         }))
+    }
+
+    /// Forward retry notices to the UI so a rate limit does not look like a
+    /// silent stop. The provider thread never touches GTK widgets directly.
+    fn retry_observer(self: &Rc<Self>) -> RetryObserver {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<RetryNotice>();
+        let state = self.clone();
+        gtk::glib::MainContext::default().spawn_local(async move {
+            while let Some(notice) = rx.recv().await {
+                let seconds = notice.delay.as_secs();
+                state.toast(&format!(
+                    "Rate limited — retrying in {seconds}s ({}/{})",
+                    notice.attempt, notice.max_attempts
+                ));
+            }
+        });
+        Arc::new(move |notice| {
+            let _ = tx.send(notice);
+        })
     }
 
     pub fn refresh_model_badges(&self) {
@@ -770,12 +812,33 @@ impl UiState {
         }
     }
 
-    /// The system-prompt section that resumes a reopened conversation.
-    pub fn session_resume_prompt(&self) -> Option<String> {
-        self.session
-            .borrow()
-            .as_ref()
-            .and_then(|session| session.resume_prompt())
+    /// One-shot system-prompt section for a reopened conversation or a model
+    /// change. Ordinary turns get no "continue this session" instruction, so a
+    /// fresh request is never talked out of writing code.
+    pub fn take_session_resume_prompt(&self) -> Option<String> {
+        if !self.session_handoff.replace(false) {
+            return None;
+        }
+        let from_model_change = self.handoff_from_model_change.replace(false);
+        let slot = self.session.borrow();
+        let session = slot.as_ref()?;
+        let mut parts = Vec::new();
+        if let Some(resume) = session.resume_prompt() {
+            parts.push(resume);
+        }
+        if from_model_change {
+            parts.push(
+                "You are continuing with a different model. The earlier tool calls and \
+                 results are part of this conversation; read them and carry on from the \
+                 last unfinished step instead of restarting."
+                    .to_string(),
+            );
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
     }
 
     pub fn push_user_message(&self, text: &str) {
@@ -786,13 +849,46 @@ impl UiState {
         }
     }
 
+    /// Persist one tool call so the next model sees what the previous one did.
+    pub fn push_tool_call(
+        &self,
+        call_id: &str,
+        tool: &str,
+        args: &serde_json::Value,
+        thought_signature: Option<String>,
+    ) {
+        let mut call = ToolCallRequest::new(call_id, tool, args.to_string());
+        call.thought_signature = thought_signature;
+        let model = self.turn_model.borrow().clone();
+        let mut slot = self.session.borrow_mut();
+        if let Some(session) = slot.as_mut() {
+            session.push(StoredMessage::tool_call(call, model));
+        }
+        drop(slot);
+        self.save_session();
+    }
+
+    /// Persist the result that was fed back to the model, including failures.
+    pub fn push_tool_result(&self, call_id: &str, tool: &str, content: &str) {
+        let mut slot = self.session.borrow_mut();
+        if let Some(session) = slot.as_mut() {
+            session.push(StoredMessage::tool_result(call_id, tool, content));
+        }
+        drop(slot);
+        self.save_session();
+    }
+
     pub fn load_session(&self, id: &str) -> Result<Session, String> {
         let workspace = self
             .workspace_path()
             .ok_or_else(|| "no workspace open".to_string())?;
-        self.session_store
+        let session = self
+            .session_store
             .load(&workspace, id)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        self.session_handoff.set(true);
+        self.handoff_from_model_change.set(false);
+        Ok(session)
     }
 
     // ---- attachment helpers --------------------------------------------

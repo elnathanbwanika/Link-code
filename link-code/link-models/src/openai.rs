@@ -155,7 +155,17 @@ impl OpenAiProvider {
     /// Render one message in OpenAI's wire format.
     fn wire_message(message: &ChatMessage) -> Value {
         let content = if message.images.is_empty() {
-            Value::String(message.content.clone())
+            // OpenAI-compatible servers expect `content: null` on an assistant
+            // turn that only requests tools. An empty string is rejected by a
+            // stricter subset of gateways and loses the whole coding turn.
+            if message.role == Role::Assistant
+                && !message.tool_calls.is_empty()
+                && message.content.trim().is_empty()
+            {
+                Value::Null
+            } else {
+                Value::String(message.content.clone())
+            }
         } else {
             let mut parts = vec![json!({ "type": "text", "text": message.content })];
             for image in &message.images {
@@ -494,7 +504,8 @@ pub fn make(config: ModelConfig, api_key: Option<String>) -> Arc<dyn ModelProvid
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_api_key;
+    use super::{sanitize_api_key, OpenAiProvider};
+    use crate::types::{ChatMessage, ToolCallRequest};
 
     #[test]
     fn sanitizes_pasted_keys() {
@@ -512,5 +523,19 @@ mod tests {
     #[test]
     fn keeps_internal_characters() {
         assert_eq!(sanitize_api_key("sk-a_b-c.d"), "sk-a_b-c.d");
+    }
+
+    #[test]
+    fn tool_call_turns_send_null_content_and_keep_the_calls() {
+        let mut message = ChatMessage::assistant("");
+        message.tool_calls.push(ToolCallRequest::new(
+            "call_1",
+            "read_file",
+            "{\"path\":\"src/main.rs\"}",
+        ));
+        let wire = OpenAiProvider::wire_message(&message);
+        assert!(wire["content"].is_null());
+        assert_eq!(wire["tool_calls"][0]["id"], "call_1");
+        assert_eq!(wire["tool_calls"][0]["function"]["name"], "read_file");
     }
 }

@@ -26,7 +26,9 @@ pub mod toolcall;
 pub mod types;
 
 pub use error::{LinkModelError, ModelResult};
-pub use keypool::{KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, RotatingProvider};
+pub use keypool::{
+    KeyPool, KeyPoolObserver, KeyPoolUpdate, KeySlot, RetryNotice, RetryObserver, RotatingProvider,
+};
 pub use openai::sanitize_api_key;
 pub use provider::{ModelProvider, ModelStream, ProviderFactory};
 pub use proxy::{ProxyProtocol, ProxySettings};

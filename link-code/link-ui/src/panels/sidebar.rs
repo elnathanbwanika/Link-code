@@ -1016,6 +1016,8 @@ fn show_session_inner(state: &Rc<UiState>, session: Session, notify: bool) {
         widgets.tasks.render(&session.work.todos);
     }
     *state.session.borrow_mut() = Some(session);
+    state.session_handoff.set(true);
+    state.handoff_from_model_change.set(false);
     state.cost.set(cost);
     if notify {
         state.toast(&format!("Loaded session “{title}”"));

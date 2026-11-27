@@ -16,7 +16,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::error::{LinkModelError, ModelResult};
+use crate::error::{ErrorCategory, LinkModelError, ModelResult};
 use crate::provider::{provider_for, ConnectionReport, ModelProvider, ModelStream, ProviderFactory};
 use crate::registry::{ApiKeyEntry, ApiKeyPool, ModelConfig, ProviderKind};
 use crate::types::{Capabilities, ChatRequest, ModelInfo, Usage};
@@ -187,6 +187,22 @@ pub struct KeyPoolUpdate {
 /// forward the snapshot to the UI thread rather than touching GTK state here.
 pub type KeyPoolObserver = Arc<dyn Fn(KeyPoolUpdate) + Send + Sync>;
 
+/// A transient failure that is about to be retried after a backoff.
+#[derive(Debug, Clone)]
+pub struct RetryNotice {
+    /// Number of the retry that will happen next, starting at 2.
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub delay: Duration,
+    pub reason: String,
+}
+
+/// Receives retry notices. Implementations must forward them to the UI thread.
+pub type RetryObserver = Arc<dyn Fn(RetryNotice) + Send + Sync>;
+
+/// How many times a whole key rotation is attempted before giving up.
+const MAX_RETRY_ROUNDS: u32 = 4;
+
 struct DefaultFactory;
 
 impl ProviderFactory for DefaultFactory {
@@ -201,6 +217,7 @@ pub struct RotatingProvider {
     config: ModelConfig,
     pool: Arc<Mutex<KeyPool>>,
     observer: Option<KeyPoolObserver>,
+    retry_observer: Option<RetryObserver>,
     factory: Arc<dyn ProviderFactory>,
 }
 
@@ -210,8 +227,15 @@ impl RotatingProvider {
             config,
             pool: Arc::new(Mutex::new(pool)),
             observer,
+            retry_observer: None,
             factory: Arc::new(DefaultFactory),
         }
+    }
+
+    /// Attach a UI observer for transient failures that will be retried.
+    pub fn with_retry_observer(mut self, observer: RetryObserver) -> Self {
+        self.retry_observer = Some(observer);
+        self
     }
 
     /// Test seam: build inner providers through a custom factory.
@@ -225,8 +249,33 @@ impl RotatingProvider {
             config,
             pool: Arc::new(Mutex::new(pool)),
             observer,
+            retry_observer: None,
             factory,
         }
+    }
+
+    /// Backoff for a whole-pool failure, or `None` when the error is final.
+    fn retry_backoff(&self, error: &LinkModelError, round: u32) -> Option<Duration> {
+        if round + 1 >= MAX_RETRY_ROUNDS {
+            return None;
+        }
+        let retryable = error.category() == ErrorCategory::RateLimit || error.is_retryable();
+        if !retryable {
+            return None;
+        }
+        let delay = error
+            .retry_after()
+            .unwrap_or_else(|| Duration::from_secs(1u64 << round.min(3)))
+            .min(Duration::from_secs(20));
+        if let Some(observer) = &self.retry_observer {
+            observer(RetryNotice {
+                attempt: round + 2,
+                max_attempts: MAX_RETRY_ROUNDS,
+                delay,
+                reason: error.to_string(),
+            });
+        }
+        Some(delay)
     }
 
     /// Current pool snapshot (used by tests and by the UI after a turn).
@@ -246,6 +295,122 @@ impl RotatingProvider {
             .map(|slot| slot.key.trim().to_string())
             .filter(|key| !key.is_empty());
         self.factory.create(&self.config, key)
+    }
+
+    /// One pass over every key for model discovery.
+    async fn list_models_round(&self) -> ModelResult<Vec<ModelInfo>> {
+        let len = self.lock().slots.len();
+        if len == 0 {
+            return self.build(&KeyPool::default(), None).list_models().await;
+        }
+        let mut tried = vec![false; len];
+        let mut last_error = None;
+        loop {
+            let Some(index) = ({
+                let pool = self.lock();
+                pool.next_candidate(&tried)
+            }) else {
+                break;
+            };
+            tried[index] = true;
+            let provider = {
+                let pool = self.lock();
+                self.build(&pool, Some(index))
+            };
+            match provider.list_models().await {
+                Ok(models) => {
+                    self.record_success(index);
+                    return Ok(models);
+                }
+                Err(error) if error.is_key_exhaustion() => {
+                    self.record_exhausted(index);
+                    last_error = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| LinkModelError::Other("no API key could be used".into())))
+    }
+
+    /// One pass over every key to establish a stream.
+    async fn stream_chat_round(&self, request: &ChatRequest) -> ModelResult<ModelStream> {
+        let len = self.lock().slots.len();
+        if len == 0 {
+            return self.build(&KeyPool::default(), None).stream_chat(request.clone()).await;
+        }
+        let mut tried = vec![false; len];
+        let mut last_error = None;
+        loop {
+            let Some(index) = ({
+                let pool = self.lock();
+                pool.next_candidate(&tried)
+            }) else {
+                break;
+            };
+            tried[index] = true;
+            let provider = {
+                let pool = self.lock();
+                self.build(&pool, Some(index))
+            };
+            match provider.stream_chat(request.clone()).await {
+                Ok(stream) => {
+                    self.record_success(index);
+                    return Ok(stream);
+                }
+                Err(error) if error.is_key_exhaustion() => {
+                    tracing::warn!(
+                        key = %self.lock().slots.get(index).map(|slot| slot.label.as_str()).unwrap_or("?"),
+                        %error,
+                        "API key ran out; trying the next key"
+                    );
+                    self.record_exhausted(index);
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| LinkModelError::Auth {
+            status: 401,
+            url: self.config.base_url.clone(),
+            body: "every API key for this endpoint was rejected or is out of quota".to_string(),
+        }))
+    }
+
+    /// One pass over every key for a non-streaming completion.
+    async fn complete_round(&self, request: &ChatRequest) -> ModelResult<(String, Usage)> {
+        let len = self.lock().slots.len();
+        if len == 0 {
+            return self.build(&KeyPool::default(), None).complete(request.clone()).await;
+        }
+        let mut tried = vec![false; len];
+        let mut last_error = None;
+        loop {
+            let Some(index) = ({
+                let pool = self.lock();
+                pool.next_candidate(&tried)
+            }) else {
+                break;
+            };
+            tried[index] = true;
+            let provider = {
+                let pool = self.lock();
+                self.build(&pool, Some(index))
+            };
+            match provider.complete(request.clone()).await {
+                Ok(result) => {
+                    self.record_success(index);
+                    return Ok(result);
+                }
+                Err(error) if error.is_key_exhaustion() => {
+                    self.record_exhausted(index);
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| LinkModelError::Other("no API key could be used".into())))
     }
 
     fn record_success(&self, index: usize) {
@@ -324,123 +489,51 @@ impl ModelProvider for RotatingProvider {
     }
 
     async fn list_models(&self) -> ModelResult<Vec<ModelInfo>> {
-        let len = self.lock().slots.len();
-        if len == 0 {
-            return self.build(&KeyPool::default(), None).list_models().await;
-        }
-        let mut tried = vec![false; len];
-        let mut last_error = None;
-        loop {
-            // Drop the lock before awaiting: the candidate is a plain index.
-            let Some(index) = ({
-                let pool = self.lock();
-                pool.next_candidate(&tried)
-            }) else {
-                break;
-            };
-            tried[index] = true;
-            let provider = {
-                let pool = self.lock();
-                self.build(&pool, Some(index))
-            };
-            match provider.list_models().await {
-                Ok(models) => {
-                    self.record_success(index);
-                    return Ok(models);
-                }
-                Err(error) if error.is_key_exhaustion() => {
-                    self.record_exhausted(index);
-                    last_error = Some(error);
-                }
-                Err(error) => return Err(error),
+        for round in 0..MAX_RETRY_ROUNDS {
+            match self.list_models_round().await {
+                Ok(models) => return Ok(models),
+                Err(error) => match self.retry_backoff(&error, round) {
+                    Some(delay) => {
+                        tracing::warn!(?error, round, "model discovery failed; retrying");
+                        tokio::time::sleep(delay).await;
+                    }
+                    None => return Err(error),
+                },
             }
         }
-        Err(last_error.unwrap_or_else(|| LinkModelError::Other("no API key could be used".into())))
+        Err(LinkModelError::Other("retry loop exhausted".into()))
     }
 
     async fn stream_chat(&self, request: ChatRequest) -> ModelResult<ModelStream> {
-        let len = self.lock().slots.len();
-        if len == 0 {
-            return self.build(&KeyPool::default(), None).stream_chat(request).await;
-        }
-        let mut tried = vec![false; len];
-        let mut last_error = None;
-        loop {
-            // Drop the lock before awaiting: the candidate is a plain index.
-            let Some(index) = ({
-                let pool = self.lock();
-                pool.next_candidate(&tried)
-            }) else {
-                break;
-            };
-            tried[index] = true;
-            let provider = {
-                let pool = self.lock();
-                self.build(&pool, Some(index))
-            };
-            match provider.stream_chat(request.clone()).await {
-                Ok(stream) => {
-                    self.record_success(index);
-                    return Ok(stream);
-                }
-                Err(error) if error.is_key_exhaustion() => {
-                    tracing::warn!(
-                        key = %self.lock().slots.get(index).map(|slot| slot.label.as_str()).unwrap_or("?"),
-                        %error,
-                        "API key ran out; trying the next key"
-                    );
-                    self.record_exhausted(index);
-                    last_error = Some(error);
-                    // Give a heavily rate-limited endpoint a moment before the
-                    // next key is tried.
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(error) => return Err(error),
+        for round in 0..MAX_RETRY_ROUNDS {
+            match self.stream_chat_round(&request).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => match self.retry_backoff(&error, round) {
+                    Some(delay) => {
+                        tracing::warn!(?error, round, "stream request failed; retrying");
+                        tokio::time::sleep(delay).await;
+                    }
+                    None => return Err(error),
+                },
             }
         }
-        Err(last_error.unwrap_or_else(|| {
-            LinkModelError::Auth {
-                status: 401,
-                url: self.config.base_url.clone(),
-                body: "every API key for this endpoint was rejected or is out of quota".to_string(),
-            }
-        }))
+        Err(LinkModelError::Other("retry loop exhausted".into()))
     }
 
     async fn complete(&self, request: ChatRequest) -> ModelResult<(String, Usage)> {
-        let len = self.lock().slots.len();
-        if len == 0 {
-            return self.build(&KeyPool::default(), None).complete(request).await;
-        }
-        let mut tried = vec![false; len];
-        let mut last_error = None;
-        loop {
-            // Drop the lock before awaiting: the candidate is a plain index.
-            let Some(index) = ({
-                let pool = self.lock();
-                pool.next_candidate(&tried)
-            }) else {
-                break;
-            };
-            tried[index] = true;
-            let provider = {
-                let pool = self.lock();
-                self.build(&pool, Some(index))
-            };
-            match provider.complete(request.clone()).await {
-                Ok(result) => {
-                    self.record_success(index);
-                    return Ok(result);
-                }
-                Err(error) if error.is_key_exhaustion() => {
-                    self.record_exhausted(index);
-                    last_error = Some(error);
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(error) => return Err(error),
+        for round in 0..MAX_RETRY_ROUNDS {
+            match self.complete_round(&request).await {
+                Ok(result) => return Ok(result),
+                Err(error) => match self.retry_backoff(&error, round) {
+                    Some(delay) => {
+                        tracing::warn!(?error, round, "completion failed; retrying");
+                        tokio::time::sleep(delay).await;
+                    }
+                    None => return Err(error),
+                },
             }
         }
-        Err(last_error.unwrap_or_else(|| LinkModelError::Other("no API key could be used".into())))
+        Err(LinkModelError::Other("retry loop exhausted".into()))
     }
 
     async fn test_connection(&self) -> ModelResult<ConnectionReport> {
@@ -474,14 +567,31 @@ mod tests {
         /// Keys that should fail with a quota error.
         exhausted: Mutex<Vec<String>>,
         streams_started: AtomicUsize,
+        /// First N calls fail with a short rate limit, then normal behaviour resumes.
+        rate_limit_calls: AtomicUsize,
     }
 
     impl FakeFactory {
         fn new(exhausted: &[&str]) -> Self {
+            Self::with_rate_limits(exhausted, 0)
+        }
+
+        fn with_rate_limits(exhausted: &[&str], count: usize) -> Self {
             Self {
                 calls: AtomicUsize::new(0),
                 exhausted: Mutex::new(exhausted.iter().map(|key| key.to_string()).collect()),
                 streams_started: AtomicUsize::new(0),
+                rate_limit_calls: AtomicUsize::new(count),
+            }
+        }
+
+        fn take_rate_limit(&self) -> bool {
+            let remaining = self.rate_limit_calls.load(Ordering::SeqCst);
+            if remaining > 0 {
+                self.rate_limit_calls.store(remaining - 1, Ordering::SeqCst);
+                true
+            } else {
+                false
             }
         }
     }
@@ -489,6 +599,16 @@ mod tests {
     struct FakeProvider {
         key: Option<String>,
         should_fail: bool,
+        rate_limited: bool,
+    }
+
+    impl FakeProvider {
+        fn rate_limit() -> LinkModelError {
+            LinkModelError::RateLimit {
+                retry_after: Some(Duration::from_millis(1)),
+                body: "temporarily rate limited".into(),
+            }
+        }
     }
 
     #[async_trait]
@@ -514,16 +634,19 @@ mod tests {
         }
 
         async fn list_models(&self) -> ModelResult<Vec<ModelInfo>> {
+            if self.rate_limited {
+                return Err(Self::rate_limit());
+            }
             if self.should_fail {
-                return Err(LinkModelError::RateLimit {
-                    retry_after: None,
-                    body: "quota exhausted".into(),
-                });
+                return Err(Self::rate_limit());
             }
             Ok(vec![ModelInfo::new("fake-model")])
         }
 
         async fn stream_chat(&self, _request: ChatRequest) -> ModelResult<ModelStream> {
+            if self.rate_limited {
+                return Err(Self::rate_limit());
+            }
             if self.should_fail {
                 return Err(LinkModelError::Auth {
                     status: 401,
@@ -542,11 +665,8 @@ mod tests {
         }
 
         async fn complete(&self, _request: ChatRequest) -> ModelResult<(String, Usage)> {
-            if self.should_fail {
-                return Err(LinkModelError::RateLimit {
-                    retry_after: None,
-                    body: "quota exhausted".into(),
-                });
+            if self.rate_limited || self.should_fail {
+                return Err(Self::rate_limit());
             }
             Ok((format!("ok:{}", self.key.clone().unwrap_or_default()), Usage::default()))
         }
@@ -580,6 +700,7 @@ mod tests {
             Arc::new(FakeProvider {
                 key: api_key,
                 should_fail,
+                rate_limited: self.take_rate_limit(),
             })
         }
     }
@@ -669,6 +790,34 @@ mod tests {
         let provider = RotatingProvider::with_factory(config(), initial, None, factory);
         let _stream = provider.stream_chat(ChatRequest::new("m")).await.unwrap();
         assert!(!provider.snapshot().keys[0].exhausted);
+    }
+
+    #[tokio::test]
+    async fn rate_limited_pool_retries_with_backoff_and_notifies() {
+        let factory = Arc::new(FakeFactory::with_rate_limits(&[], 2));
+        let notices = Arc::new(Mutex::new(Vec::new()));
+        let notice_sink = notices.clone();
+        let observer: RetryObserver = Arc::new(move |notice| {
+            notice_sink.lock().unwrap().push(notice);
+        });
+        let provider = RotatingProvider::with_factory(
+            config(),
+            pool(&["only"]),
+            None,
+            factory.clone(),
+        )
+        .with_retry_observer(observer);
+
+        let _stream = provider
+            .stream_chat(ChatRequest::new("m"))
+            .await
+            .expect("the third attempt should succeed");
+        assert_eq!(factory.calls.load(Ordering::SeqCst), 3);
+        let notices = notices.lock().unwrap();
+        assert_eq!(notices.len(), 2);
+        assert_eq!(notices[0].attempt, 2);
+        assert_eq!(notices[1].attempt, 3);
+        assert_eq!(notices[0].max_attempts, MAX_RETRY_ROUNDS);
     }
 
     #[test]

@@ -852,10 +852,12 @@ impl AgentLoop {
             .set(ContextPart::History, request.estimated_prompt_tokens());
 
         self.handle.set_state(AgentState::Thinking);
-        let mut stream = provider
-            .stream_chat(request)
-            .await
-            .map_err(StreamFailure::Provider)?;
+        // Retry backoffs happen before a stream exists, so Stop must be able to
+        // interrupt this wait as well as the stream itself.
+        let mut stream = tokio::select! {
+            _ = token.cancelled() => return Err(StreamFailure::Cancelled),
+            result = provider.stream_chat(request) => result.map_err(StreamFailure::Provider)?,
+        };
 
         let mut accumulator = ToolCallAccumulator::new();
         let mut live_edits: BTreeMap<usize, LiveEdit> = BTreeMap::new();
@@ -983,6 +985,7 @@ impl AgentLoop {
                 tool: normalised.name.clone(),
                 summary: format!("Unknown tool `{}`", normalised.name),
                 args: normalised.arguments.clone(),
+                thought_signature: request.thought_signature.clone(),
             });
             self.sink.emit(AgentEvent::ToolStatusChanged {
                 call_id: call_id.clone(),
@@ -1005,6 +1008,7 @@ impl AgentLoop {
             tool: normalised.name.clone(),
             summary: summary.clone(),
             args: normalised.arguments.clone(),
+            thought_signature: request.thought_signature.clone(),
         });
 
         // ---- permission -------------------------------------------------
